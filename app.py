@@ -55,7 +55,7 @@ def get_questions():
     """Get the interview questions"""
     try:
         interviewer = OllamaInterviewer()
-        # You may need to add a method to retrieve questions from interviewer
+        # Note: add a method to retrieve questions from interviewer
         questions = interviewer.get_questions() if hasattr(interviewer, 'get_questions') else []
         
         return jsonify({

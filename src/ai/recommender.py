@@ -1,5 +1,3 @@
-from http.client import responses
-
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
@@ -21,8 +19,18 @@ class MusicRecommender:
 
         # add genre/artist hints from track metadata
         parts.append(track.get("name", ""))
+        parts.append(track.get("album", {}).get("name", ""))
         for artist in track.get("artists", []):
             parts.append(artist.get("name", ""))
+
+        popularity = track.get("popularity", 0)
+        if popularity >= 75:
+            parts.append("popular mainstream")
+        elif popularity <= 25:
+            parts.append("niche lesser-known")
+
+        if track.get("explicit"):
+            parts.append("explicit")
 
         # translate numeric audio features into descriptive text
         if audio_features:
@@ -52,7 +60,7 @@ class MusicRecommender:
             
         return " ".join(parts)
 
-    def recommend(self, user_profile):
+    def recommend(self, user_profile, spotify):
         """
         - build text profile from interview responses
         - search spotify for candidate tracks
