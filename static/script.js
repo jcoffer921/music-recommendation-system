@@ -1,46 +1,151 @@
-// Form submission handler
-document.getElementById('recommendationForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
+const recommendationForm = document.getElementById('recommendationForm');
+const hybridFields = document.querySelectorAll('[data-hybrid-field]');
+const hybridFieldState = {};
 
-    // Get form data
-    const formData = new FormData(document.getElementById('recommendationForm'));
-    const responses = Object.fromEntries(formData);
+function normalizeToken(value) {
+    return value.trim().replace(/\s+/g, ' ');
+}
 
-    // Show loading state
-    showLoading(true);
-    hideError();
-    hideResults();
+function splitTokens(value) {
+    return value
+        .split(',')
+        .map(normalizeToken)
+        .filter(Boolean);
+}
 
-    try {
-        // Send request to backend
-        const response = await fetch('/recommend', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ responses })
-        });
+function uniqueTokens(tokens) {
+    const seen = new Set();
 
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+    return tokens.filter((token) => {
+        const key = token.toLowerCase();
+
+        if (seen.has(key)) {
+            return false;
         }
 
-        const data = await response.json();
+        seen.add(key);
+        return true;
+    });
+}
 
-        // Display results
-        displayResults(data);
-        showLoading(false);
-    } catch (error) {
-        console.error('Error:', error);
-        showError(`Failed to get recommendations: ${error.message}`);
-        showLoading(false);
+function initHybridField(field) {
+    const fieldKey = field.dataset.hybridField;
+    const input = field.querySelector('[data-hybrid-input]');
+    const hiddenInput = field.querySelector('[data-selected-values]');
+    const pills = Array.from(field.querySelectorAll('.select-pill'));
+    const maxSelections = Number.parseInt(field.dataset.maxSelections || '5', 10);
+    const selectedPills = new Map();
+
+    hybridFieldState[fieldKey] = {
+        getSelectedValues: () => [...selectedPills.values()],
+        getCustomValue: () => input.value.trim(),
+    };
+
+    function updatePillUI() {
+        pills.forEach((pill) => {
+            const key = pill.dataset.pillValue.toLowerCase();
+            const isActive = selectedPills.has(key);
+            const limitReached = !isActive && selectedPills.size >= maxSelections;
+
+            pill.classList.toggle('is-active', isActive);
+            pill.classList.toggle('is-disabled', limitReached);
+            pill.setAttribute('aria-pressed', String(isActive));
+            pill.disabled = limitReached;
+        });
     }
-});
 
-// Update energy level display
-document.getElementById('energy').addEventListener('input', (e) => {
-    document.getElementById('energyValue').textContent = e.target.value;
-});
+    function syncHiddenInput() {
+        hiddenInput.value = [...selectedPills.values()].join(', ');
+    }
+
+    function syncCustomInput() {
+        input.value = uniqueTokens(splitTokens(input.value)).join(', ');
+    }
+
+    function syncFromInputs() {
+        const typedTokens = splitTokens(input.value);
+        const selectedTokens = splitTokens(hiddenInput.value);
+
+        selectedPills.clear();
+        selectedTokens.slice(0, maxSelections).forEach((token) => {
+            selectedPills.set(token.toLowerCase(), token);
+        });
+
+        input.value = typedTokens
+            .filter((token) => !selectedPills.has(token.toLowerCase()))
+            .join(', ');
+        updatePillUI();
+        syncHiddenInput();
+    }
+
+    pills.forEach((pill) => {
+        pill.addEventListener('click', () => {
+            const value = pill.dataset.pillValue;
+            const key = value.toLowerCase();
+
+            if (selectedPills.has(key)) {
+                selectedPills.delete(key);
+            } else if (selectedPills.size < maxSelections) {
+                selectedPills.set(key, value);
+            }
+
+            updatePillUI();
+            syncHiddenInput();
+        });
+    });
+
+    input.addEventListener('blur', syncCustomInput);
+    syncFromInputs();
+}
+
+hybridFields.forEach(initHybridField);
+
+if (recommendationForm) {
+    recommendationForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        // Get form data
+        const formData = new FormData(recommendationForm);
+        const responses = {
+            selected_moods: hybridFieldState.mood ? hybridFieldState.mood.getSelectedValues() : [],
+            custom_mood: hybridFieldState.mood ? hybridFieldState.mood.getCustomValue() : "",
+            selected_genres: hybridFieldState.genre ? hybridFieldState.genre.getSelectedValues() : [],
+            custom_genre: hybridFieldState.genre ? hybridFieldState.genre.getCustomValue() : "",
+            artist: formData.get('artist') || "",
+            vibe: formData.get('vibe') || "",
+        };
+
+        // Show loading state
+        showLoading(true);
+        hideError();
+        hideResults();
+
+        try {
+            // Send request to backend
+            const response = await fetch('/recommend', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ responses })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            // Display results
+            displayResults(data);
+            showLoading(false);
+        } catch (error) {
+            console.error('Error:', error);
+            showError(`Failed to get recommendations: ${error.message}`);
+            showLoading(false);
+        }
+    });
+}
 
 // Display results
 function displayResults(data) {
@@ -101,4 +206,21 @@ function hideError() {
 // Hide results
 function hideResults() {
     document.getElementById('results').style.display = 'none';
+}
+
+const revealElements = document.querySelectorAll('.reveal');
+
+if (revealElements.length > 0) {
+    const revealObserver = new IntersectionObserver((entries, observer) => {
+        entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+                entry.target.classList.add('is-visible');
+                observer.unobserve(entry.target);
+            }
+        });
+    }, {
+        threshold: 0.18
+    });
+
+    revealElements.forEach((element) => revealObserver.observe(element));
 }

@@ -5,26 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}AI Music Recommendation System{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    {% block extra_head %}{% endblock %}
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
     <nav class="navbar">
         <div class="container">
             <div class="navbar-brand">
-                <h1> MusicMe</h1>
+                <h1>MusicMe</h1>
             </div>
             <ul class="nav-links">
-                <li><a href="/">Home</a></li>
-                <li><a href="/about">About</a></li>
+                <li><a href="/" class="{% block nav_home_class %}{% endblock %}">Home</a></li>
+                <li><a href="/about" class="{% block nav_about_class %}{% endblock %}">About</a></li>
             </ul>
         </div>
     </nav>
 
-    <main class="container">
+    <main class="{% block main_class %}container{% endblock %}">
         {% block content %}{% endblock %}
     </main>
 
     <footer>
         <p>&copy; 2026 AI Music Recommendation System. All rights reserved.</p>
     </footer>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    {% block extra_scripts %}{% endblock %}
 </body>
 </html>

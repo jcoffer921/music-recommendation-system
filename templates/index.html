@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block title %}Get Music Recommendations{% endblock %}
+{% block nav_home_class %}active{% endblock %}
 
 {% block content %}
 <div class="hero">
@@ -13,30 +14,62 @@
         <fieldset>
             <legend>Your Music Preferences</legend>
             
-            <div class="form-group">
+            <div class="form-group hybrid-group" data-hybrid-field="mood" data-max-selections="5">
                 <label for="mood">What's your current mood?</label>
-                <input type="text" id="mood" name="mood" placeholder="e.g., happy, energetic, calm" required>
+                <div class="pill-group" data-pill-group="mood" aria-label="Mood options">
+                    <button type="button" class="select-pill" data-pill-value="Happy">Happy</button>
+                    <button type="button" class="select-pill" data-pill-value="Energetic">Energetic</button>
+                    <button type="button" class="select-pill" data-pill-value="Calm">Calm</button>
+                    <button type="button" class="select-pill" data-pill-value="Sad">Sad</button>
+                    <button type="button" class="select-pill" data-pill-value="Focused">Focused</button>
+                    <button type="button" class="select-pill" data-pill-value="Romantic">Romantic</button>
+                    <button type="button" class="select-pill" data-pill-value="Hype">Hype</button>
+                    <button type="button" class="select-pill" data-pill-value="Chill">Chill</button>
+                </div>
+                <input
+                    type="text"
+                    id="mood"
+                    name="custom_mood"
+                    class="hybrid-input"
+                    data-hybrid-input
+                    placeholder="e.g., nostalgic, late night drive"
+                >
+                <input type="hidden" name="selected_moods" data-selected-values>
+                <p class="field-hint">Pick up to 5 moods or type your own. Selected pills are added automatically.</p>
             </div>
 
-            <div class="form-group">
+            <div class="form-group hybrid-group" data-hybrid-field="genre" data-max-selections="5">
                 <label for="genre">Favorite music genre?</label>
-                <input type="text" id="genre" name="genre" placeholder="e.g., rock, pop, jazz, hip-hop" required>
+                <div class="pill-group" data-pill-group="genre" aria-label="Genre options">
+                    <button type="button" class="select-pill" data-pill-value="Hip-Hop">Hip-Hop</button>
+                    <button type="button" class="select-pill" data-pill-value="R&B">R&amp;B</button>
+                    <button type="button" class="select-pill" data-pill-value="Pop">Pop</button>
+                    <button type="button" class="select-pill" data-pill-value="Rock">Rock</button>
+                    <button type="button" class="select-pill" data-pill-value="Jazz">Jazz</button>
+                    <button type="button" class="select-pill" data-pill-value="Afrobeats">Afrobeats</button>
+                    <button type="button" class="select-pill" data-pill-value="Electronic">Electronic</button>
+                    <button type="button" class="select-pill" data-pill-value="Indie">Indie</button>
+                </div>
+                <input
+                    type="text"
+                    id="genre"
+                    name="custom_genre"
+                    class="hybrid-input"
+                    data-hybrid-input
+                    placeholder="e.g., alternative trap, lo-fi house"
+                >
+                <input type="hidden" name="selected_genres" data-selected-values>
+                <p class="field-hint">Choose a few genres, then refine with custom text if needed.</p>
             </div>
 
             <div class="form-group">
                 <label for="artist">Favorite artist or band?</label>
-                <input type="text" id="artist" name="artist" placeholder="e.g., The Beatles, Drake..." required>
-            </div>
-
-            <div class="form-group">
-                <label for="energy">Desired energy level (1-10)?</label>
-                <input type="range" id="energy" name="energy" min="1" max="10" value="5">
-                <span id="energyValue">5</span>/10
+                <input type="text" id="artist" name="artist" placeholder="e.g., The Beatles, Drake...">
             </div>
 
             <div class="form-group">
                 <label for="vibe">What's the vibe?</label>
-                <input type="text" id="vibe" name="vibe" placeholder="e.g., workout, studying, party, chill" required>
+                <input type="text" id="vibe" name="vibe" placeholder="e.g., workout, studying, party, chill">
             </div>
 
             <button type="submit" class="btn-primary">Get Recommendations</button>
@@ -55,6 +88,4 @@
 </div>
 
 <div id="error" class="error-message" style="display: none;"></div>
-
-<script src="{{ url_for('static', filename='script.js') }}"></script>
 {% endblock %}

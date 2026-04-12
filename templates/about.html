@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+
+{% block title %}About MusicMe{% endblock %}
+{% block body_class %}about-page{% endblock %}
+{% block nav_about_class %}active{% endblock %}
+{% block main_class %}about-main{% endblock %}
+
+{% block content %}
+<section class="about-hero">
+    <div class="container about-hero-grid">
+        <div class="about-hero-copy reveal">
+            <span class="eyebrow">AI-powered music discovery</span>
+            <h2>Music That Understands You</h2>
+            <p>
+                MusicMe blends Spotify listening data with intelligent recommendations to match the songs,
+                moods, and moments that feel personal from the first click.
+            </p>
+            <div class="hero-actions">
+                <a href="/" class="btn-primary btn-inline">Connect Your Music</a>
+                <a href="#mission" class="btn-secondary">Explore Our Story</a>
+            </div>
+        </div>
+        <div class="about-hero-visual reveal reveal-delay">
+            <div class="visual-card visual-card-main">
+                <span class="visual-label">Now curating</span>
+                <h3>Late-night focus mix</h3>
+                <p>Built from your recent favorites, energy patterns, and mood cues.</p>
+            </div>
+            <div class="visual-card visual-card-accent">
+                <span>24/7 adaptive playlists</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="mission" class="about-section section-shell reveal">
+    <div class="container">
+        <div class="section-heading">
+            <span class="section-tag">Our Mission</span>
+            <h3>Finding the right song should feel effortless.</h3>
+        </div>
+        <p class="section-copy">
+            People hear thousands of songs every day, but discovering the tracks that truly fit a mood,
+            moment, or personality still takes too much work. MusicMe simplifies that search with AI,
+            turning listening habits into recommendations that feel thoughtful, personal, and easy to act on.
+            The goal is simple: help every user feel more connected to the music they love without getting
+            buried in endless scrolling.
+        </p>
+    </div>
+</section>
+
+<section class="about-section reveal">
+    <div class="container">
+        <div class="section-heading">
+            <span class="section-tag">What We Do</span>
+            <h3>From Spotify data to recommendations that actually fit.</h3>
+        </div>
+        <div class="info-grid">
+            <article class="info-panel">
+                <div class="panel-icon" aria-hidden="true">1</div>
+                <h4>Input your music preferences</h4>
+                <p>Users share their favorite artists, genres, or moods so MusicMe can understand their taste.</p>
+            </article>
+            <article class="info-panel">
+                <div class="panel-icon" aria-hidden="true">2</div>
+                <h4>Understand your vibe</h4>
+                <p>MusicMe processes your input to identify patterns in style, mood, and sound preferences.</p>
+            </article>
+            <article class="info-panel">
+                <div class="panel-icon" aria-hidden="true">3</div>
+                <h4>Deliver smart recommendations</h4>
+                <p>The system suggests songs and playlists tailored to your unique taste and energy.</p>
+            </article>
+        </div>
+        <div class="highlights-band">
+            <span>Mood-based recommendations</span>
+            <span>Smart playlists</span>
+            <span>User-driven discovery</span>
+        </div>
+    </div>
+</section>
+
+<section class="about-section reveal">
+    <div class="container">
+        <div class="section-heading">
+            <span class="section-tag">Why MusicMe?</span>
+            <h3>Music that actually fits your taste</h3>
+        </div>
+        <div class="feature-grid">
+            <article class="feature-card">
+                <div class="feature-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" role="presentation" focusable="false">
+                        <path d="M4 13a8 8 0 0 1 16 0" />
+                        <path d="M6 13v4a2 2 0 0 0 2 2h1v-6H8a2 2 0 0 0-2 2Z" />
+                        <path d="M18 13h-1v6h1a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2Z" />
+                        <path d="M9 19a3 3 0 0 0 3 3h1" />
+                    </svg>
+                </div>
+                <h4>Personalized Experience</h4>
+                <p>Recommendations are shaped around mood, personality, and listening behavior instead of generic top charts.</p>
+            </article>
+            <article class="feature-card">
+                <div class="feature-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" role="presentation" focusable="false">
+                        <rect x="5" y="7" width="14" height="10" rx="3" />
+                        <path d="M12 4v3" />
+                        <path d="M9 17v2" />
+                        <path d="M15 17v2" />
+                        <path d="M5 12H3" />
+                        <path d="M21 12h-2" />
+                        <circle cx="10" cy="12" r="1" fill="currentColor" stroke="none" />
+                        <circle cx="14" cy="12" r="1" fill="currentColor" stroke="none" />
+                        <path d="M10 14.5h4" />
+                    </svg>
+                </div>
+                <h4>AI-Powered Insights</h4>
+                <p>Machine intelligence helps surface hidden favorites, better matches, and more relevant playlists.</p>
+            </article>
+            <article class="feature-card">
+                <div class="feature-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" role="presentation" focusable="false">
+                        <path d="M7 7h7a5 5 0 0 1 0 10H9" />
+                        <path d="m7 7 2.5-2.5" />
+                        <path d="M7 7 9.5 9.5" />
+                        <path d="M17 17H10a5 5 0 0 1 0-10h5" opacity="0.35" />
+                    </svg>
+                </div>
+                <h4>Constantly Learning</h4>
+                <p>As tastes shift, MusicMe adapts so recommendations keep up with changing moods and routines.</p>
+            </article>
+            <article class="feature-card">
+                <div class="feature-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" role="presentation" focusable="false">
+                        <circle cx="12" cy="12" r="8" />
+                        <path d="M4 12h16" />
+                        <path d="M12 4a12 12 0 0 1 0 16" />
+                        <path d="M12 4a12 12 0 0 0 0 16" opacity="0.55" />
+                    </svg>
+                </div>
+                <h4>Discover New Sounds</h4>
+                <p>Users can move beyond familiar artists and explore new genres, scenes, and global sounds with confidence.</p>
+            </article>
+        </div>
+    </div>
+</section>
+
+<section class="about-section vision-section reveal">
+    <div class="container vision-layout">
+        <div>
+            <div class="section-heading">
+                <span class="section-tag">Our Vision</span>
+                <h3>The future of music discovery should be intelligent, open, and accessible.</h3>
+            </div>
+            <p class="section-copy">
+                MusicMe is designed as a foundation for a broader discovery experience, one that can grow beyond Spotify
+                into more platforms, richer community signals, and smarter tools for sharing music. The long-term vision
+                is to make innovative recommendation technology more accessible, more social, and more useful for every
+                kind of listener.
+            </p>
+        </div>
+        <aside class="vision-card">
+            <span class="vision-kicker">Coming next</span>
+            <ul class="vision-points">
+                <li>Expanded platform integrations</li>
+                <li>Community-driven recommendation loops</li>
+                <li>Accessible discovery tools for every listener</li>
+            </ul>
+        </aside>
+    </div>
+</section>
+
+<section class="about-section reveal">
+    <div class="container creator-card">
+        <div class="creator-photo" aria-hidden="true">
+            <span>MM</span>
+        </div>
+        <div class="creator-copy">
+            <div class="section-heading">
+                <span class="section-tag">Meet the Creators</span>
+                <h3>Built by two students who care about code and sound.</h3>
+            </div>
+            <p class="section-copy">
+                MusicMe is a portfolio-driven project created by two computer science students exploring how machine
+                learning, APIs, and user-centered design can solve real problems. It reflects a passion for both
+                technology and music, along with a commitment to learning by building practical tools people can use.
+            </p>
+        </div>
+    </div>
+</section>
+
+<section class="about-cta reveal">
+    <div class="container cta-card">
+        <span class="section-tag">Start Listening Smarter</span>
+        <h3>Start your journey with MusicMe today.</h3>
+        <p>Connect your music, explore new sounds, and let AI guide your next favorite track.</p>
+        <a href="/" class="btn-primary btn-inline">Get Started</a>
+    </div>
+</section>
+{% endblock %}
