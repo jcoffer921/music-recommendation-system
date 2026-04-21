@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Recommendations{% endblock %}
+
+{% block content %}
+<section class="hero hero-split">
+    <div class="hero-copy">
+        <span class="hero-kicker">Recommendations</span>
+        <h2>Your Listening Queue</h2>
+        <p>Review the generated summary, scan the matches, and control playback without going back to the form.</p>
+        {% if recommendation_data %}
+        <p class="field-hint">{{ recommendation_data.mode_label or 'Regular Recommender' }}</p>
+        {% endif %}
+    </div>
+</section>
+
+<section class="recommendations-shell">
+    <div class="recommendations-topbar">
+        {% if recommendation_data %}
+        <div id="summary" class="summary-section topbar-card"></div>
+        {% else %}
+        <div class="summary-section empty-state-card topbar-card">
+            <h3>No Recommendations Yet</h3>
+            <p>Start on the homepage, submit your music preferences, and this page will become your playback workspace.</p>
+            <div class="player-actions">
+                <a href="/" class="btn-primary btn-inline">Go to Homepage</a>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if recommendation_data %}
+    <div id="results" class="results-container recommendations-results-layout">
+        <div id="recommendations" class="recommendations-section recommendations-grid-panel"></div>
+    </div>
+    {% endif %}
+
+    <div class="recommendations-player-wrap">
+        <section id="spotifyPlaybackPanel" class="player-panel workspace-stack">
+            <div id="spotifyAuthCard" class="player-card">
+                <h3>Browser Playback</h3>
+                <p id="spotifyAuthMessage">Log in with Spotify to enable browser playback for recommended tracks.</p>
+                <div class="player-actions">
+                    <a id="spotifyLoginButton" class="btn-secondary btn-inline" href="/auth/login?next=/recommendations">Log in with Spotify</a>
+                    <button id="spotifyLogoutButton" type="button" class="btn-secondary btn-inline" style="display: none;">Log out</button>
+                </div>
+                <p class="field-hint">Spotify Web Playback typically requires a Premium account and a Spotify app registration with the playback scopes enabled.</p>
+            </div>
+
+            <div id="spotifyPlayerCard" class="player-card" style="display: none;">
+                <div class="player-header">
+                    <div>
+                        <h3>Spotify Web Player</h3>
+                        <p id="spotifyPlayerStatus" class="player-status">Connecting to Spotify…</p>
+                    </div>
+                    <span id="spotifyDeviceBadge" class="player-device-badge">Offline</span>
+                </div>
+                <div class="now-playing">
+                    <img id="nowPlayingCover" class="now-playing__cover" src="" alt="" />
+                    <div class="now-playing__side">
+                        <div id="nowPlayingName" class="now-playing__name">No track selected</div>
+                        <div id="nowPlayingArtist" class="now-playing__artist">Choose a recommendation to start playback</div>
+                    </div>
+                </div>
+                <div class="player-actions">
+                    <button id="previousTrackButton" type="button" class="btn-secondary btn-inline" disabled>&lt;&lt;</button>
+                    <button id="togglePlayButton" type="button" class="btn-primary btn-inline" disabled>Play</button>
+                    <button id="nextTrackButton" type="button" class="btn-secondary btn-inline" disabled>&gt;&gt;</button>
+                </div>
+            </div>
+        </section>
+    </div>
+</section>
+
+{% if recommendation_data %}
+<script>
+window.__INITIAL_RECOMMENDATIONS__ = {{ recommendation_data|tojson }};
+</script>
+{% endif %}
+{% endblock %}

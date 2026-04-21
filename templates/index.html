@@ -4,88 +4,149 @@
 {% block nav_home_class %}active{% endblock %}
 
 {% block content %}
-<div class="hero">
-    <h2>Discover Your Perfect Sound</h2>
-    <p>Answer a few questions and get personalized music recommendations</p>
-</div>
+{% set values = previous_values or {} %}
+{% set active = active_tab or 'standard' %}
+<section class="hero hero-home">
+    <div class="hero-copy">
+        <span class="hero-kicker">Music discovery workspace</span>
+        <h2>Discover Your Perfect Sound</h2>
+        <p>Switch between the standard recommender and the premium MusicMe AI experience, then jump to a dedicated recommendations page built for listening.</p>
+    </div>
+</section>
 
-<div class="form-container">
-    <form id="recommendationForm">
-        <fieldset>
-            <legend>Your Music Preferences</legend>
-            
-            <div class="form-group hybrid-group" data-hybrid-field="mood" data-max-selections="5">
-                <label for="mood">What's your current mood?</label>
-                <div class="pill-group" data-pill-group="mood" aria-label="Mood options">
-                    <button type="button" class="select-pill" data-pill-value="Happy">Happy</button>
-                    <button type="button" class="select-pill" data-pill-value="Energetic">Energetic</button>
-                    <button type="button" class="select-pill" data-pill-value="Calm">Calm</button>
-                    <button type="button" class="select-pill" data-pill-value="Sad">Sad</button>
-                    <button type="button" class="select-pill" data-pill-value="Focused">Focused</button>
-                    <button type="button" class="select-pill" data-pill-value="Romantic">Romantic</button>
-                    <button type="button" class="select-pill" data-pill-value="Hype">Hype</button>
-                    <button type="button" class="select-pill" data-pill-value="Chill">Chill</button>
+{% if form_error %}
+<div class="error-message page-error">{{ form_error }}</div>
+{% endif %}
+
+<div class="form-container form-container-home">
+    <div class="home-tabs" role="tablist" aria-label="Recommendation modes">
+        <button
+            type="button"
+            class="home-tab-button {% if active == 'standard' %}is-active{% endif %}"
+            data-tab-trigger="standard"
+            aria-selected="{% if active == 'standard' %}true{% else %}false{% endif %}"
+        >
+            Regular Recommender
+        </button>
+        <button
+            type="button"
+            class="home-tab-button home-tab-button-premium {% if active == 'ai' %}is-active{% endif %}"
+            data-tab-trigger="ai"
+            aria-selected="{% if active == 'ai' %}true{% else %}false{% endif %}"
+        >
+            MusicMe AI
+            <span class="premium-badge">Premium</span>
+        </button>
+    </div>
+
+    <section class="home-tab-panel {% if active == 'standard' %}is-active{% endif %}" data-tab-panel="standard">
+        <div class="tab-intro">
+            <h3>Regular Recommender</h3>
+            <p>Use the current algorithm with your mood, genre, artist, and vibe selections.</p>
+        </div>
+        <form id="recommendationForm" action="/recommendations" method="post">
+            <fieldset>
+                <legend>Your Music Preferences</legend>
+
+                <div class="form-group hybrid-group" data-hybrid-field="mood" data-max-selections="5">
+                    <label for="mood">What's your current mood?</label>
+                    <div class="pill-group" data-pill-group="mood" aria-label="Mood options">
+                        <button type="button" class="select-pill" data-pill-value="Happy">Happy</button>
+                        <button type="button" class="select-pill" data-pill-value="Energetic">Energetic</button>
+                        <button type="button" class="select-pill" data-pill-value="Calm">Calm</button>
+                        <button type="button" class="select-pill" data-pill-value="Sad">Sad</button>
+                        <button type="button" class="select-pill" data-pill-value="Focused">Focused</button>
+                        <button type="button" class="select-pill" data-pill-value="Romantic">Romantic</button>
+                        <button type="button" class="select-pill" data-pill-value="Hype">Hype</button>
+                        <button type="button" class="select-pill" data-pill-value="Chill">Chill</button>
+                    </div>
+                    <input
+                        type="text"
+                        id="mood"
+                        name="custom_mood"
+                        class="hybrid-input"
+                        data-hybrid-input
+                        placeholder="e.g., nostalgic, late night drive"
+                        value="{{ values.get('custom_mood', '') }}"
+                    >
+                    <input type="hidden" name="selected_moods" data-selected-values value="{{ values.get('selected_moods', '') }}">
+                    <p class="field-hint">Pick up to 5 moods or type your own. Selected pills are added automatically.</p>
                 </div>
-                <input
-                    type="text"
-                    id="mood"
-                    name="custom_mood"
-                    class="hybrid-input"
-                    data-hybrid-input
-                    placeholder="e.g., nostalgic, late night drive"
-                >
-                <input type="hidden" name="selected_moods" data-selected-values>
-                <p class="field-hint">Pick up to 5 moods or type your own. Selected pills are added automatically.</p>
-            </div>
 
-            <div class="form-group hybrid-group" data-hybrid-field="genre" data-max-selections="5">
-                <label for="genre">Favorite music genre?</label>
-                <div class="pill-group" data-pill-group="genre" aria-label="Genre options">
-                    <button type="button" class="select-pill" data-pill-value="Hip-Hop">Hip-Hop</button>
-                    <button type="button" class="select-pill" data-pill-value="R&B">R&amp;B</button>
-                    <button type="button" class="select-pill" data-pill-value="Pop">Pop</button>
-                    <button type="button" class="select-pill" data-pill-value="Rock">Rock</button>
-                    <button type="button" class="select-pill" data-pill-value="Jazz">Jazz</button>
-                    <button type="button" class="select-pill" data-pill-value="Afrobeats">Afrobeats</button>
-                    <button type="button" class="select-pill" data-pill-value="Electronic">Electronic</button>
-                    <button type="button" class="select-pill" data-pill-value="Indie">Indie</button>
+                <div class="form-group hybrid-group" data-hybrid-field="genre" data-max-selections="5">
+                    <label for="genre">Favorite music genre?</label>
+                    <div class="pill-group" data-pill-group="genre" aria-label="Genre options">
+                        <button type="button" class="select-pill" data-pill-value="Hip-Hop">Hip-Hop</button>
+                        <button type="button" class="select-pill" data-pill-value="R&B">R&amp;B</button>
+                        <button type="button" class="select-pill" data-pill-value="Pop">Pop</button>
+                        <button type="button" class="select-pill" data-pill-value="Rock">Rock</button>
+                        <button type="button" class="select-pill" data-pill-value="Jazz">Jazz</button>
+                        <button type="button" class="select-pill" data-pill-value="Afrobeats">Afrobeats</button>
+                        <button type="button" class="select-pill" data-pill-value="Electronic">Electronic</button>
+                        <button type="button" class="select-pill" data-pill-value="Indie">Indie</button>
+                    </div>
+                    <input
+                        type="text"
+                        id="genre"
+                        name="custom_genre"
+                        class="hybrid-input"
+                        data-hybrid-input
+                        placeholder="e.g., alternative trap, lo-fi house"
+                        value="{{ values.get('custom_genre', '') }}"
+                    >
+                    <input type="hidden" name="selected_genres" data-selected-values value="{{ values.get('selected_genres', '') }}">
+                    <p class="field-hint">Choose a few genres, then refine with custom text if needed.</p>
                 </div>
-                <input
-                    type="text"
-                    id="genre"
-                    name="custom_genre"
-                    class="hybrid-input"
-                    data-hybrid-input
-                    placeholder="e.g., alternative trap, lo-fi house"
-                >
-                <input type="hidden" name="selected_genres" data-selected-values>
-                <p class="field-hint">Choose a few genres, then refine with custom text if needed.</p>
-            </div>
 
-            <div class="form-group">
-                <label for="artist">Favorite artist or band?</label>
-                <input type="text" id="artist" name="artist" placeholder="e.g., The Beatles, Drake...">
-            </div>
+                <div class="form-group">
+                    <label for="artist">Favorite artist or band?</label>
+                    <input type="text" id="artist" name="artist" placeholder="e.g., The Beatles, Drake..." value="{{ values.get('artist', '') }}">
+                </div>
 
-            <div class="form-group">
-                <label for="vibe">What's the vibe?</label>
-                <input type="text" id="vibe" name="vibe" placeholder="e.g., workout, studying, party, chill">
-            </div>
+                <div class="form-group">
+                    <label for="vibe">What's the vibe?</label>
+                    <input type="text" id="vibe" name="vibe" placeholder="e.g., workout, studying, party, chill" value="{{ values.get('vibe', '') }}">
+                </div>
 
-            <button type="submit" class="btn-primary">Get Recommendations</button>
-        </fieldset>
-    </form>
+                <button type="submit" class="btn-primary">Get Recommendations</button>
+            </fieldset>
+        </form>
+    </section>
+
+    <section class="home-tab-panel home-tab-panel-premium {% if active == 'ai' %}is-active{% endif %}" data-tab-panel="ai">
+        <div class="tab-intro">
+            <h3>MusicMe AI</h3>
+            <p>Premium mode uses Ollama to interpret what you mean, extract mood and audio cues, and steer the recommendation process separately from the standard algorithm.</p>
+        </div>
+        <form action="/musicme-ai/recommendations" method="post">
+            <fieldset>
+                <legend>MusicMe AI Request</legend>
+
+                <div class="form-group">
+                    <label for="natural_language_request">Describe what you want in your own words</label>
+                    <textarea
+                        id="natural_language_request"
+                        name="natural_language_request"
+                        class="prompt-textarea"
+                        rows="5"
+                        placeholder="e.g., I want upbeat late-night driving music with glossy synths, medium energy, and a little nostalgia."
+                    >{{ values.get('natural_language_request', '') }}</textarea>
+                    <p class="field-hint">MusicMe AI uses Ollama to interpret intent and convert your request into mood, energy, vibe, and genre cues.</p>
+                </div>
+
+                <div class="form-group">
+                    <label for="ai_artist">Optional artist anchor</label>
+                    <input type="text" id="ai_artist" name="ai_artist" placeholder="e.g., SZA, Fred again.., The Weeknd" value="{{ values.get('ai_artist', values.get('artist', '')) }}">
+                </div>
+
+                <div class="form-group">
+                    <label for="ai_vibe">Optional context</label>
+                    <input type="text" id="ai_vibe" name="ai_vibe" placeholder="e.g., after-hours focus, rooftop party, rainy Sunday" value="{{ values.get('ai_vibe', values.get('vibe', '')) }}">
+                </div>
+
+                <button type="submit" class="btn-primary">Launch MusicMe AI</button>
+            </fieldset>
+        </form>
+    </section>
 </div>
-
-<div id="results" class="results-container" style="display: none;">
-    <div id="summary" class="summary-section"></div>
-    <div id="recommendations" class="recommendations-section"></div>
-</div>
-
-<div id="loading" class="loading" style="display: none;">
-    <div class="spinner"></div>
-    <p>Getting your recommendations...</p>
-</div>
-
-<div id="error" class="error-message" style="display: none;"></div>
 {% endblock %}

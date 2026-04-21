@@ -55,6 +55,7 @@ def combine_inputs(selected_values, custom_value, lowercase=True):
 
 def normalize_form_data(form_data):
     """Return a clean, structured version of the submitted MusicMe form data."""
+    vibe = normalize_text(form_data.get("vibe", ""), lowercase=True)
     normalized = {
         "mood": combine_inputs(
             form_data.get("selected_moods", []),
@@ -67,7 +68,54 @@ def normalize_form_data(form_data):
             lowercase=True,
         ),
         "artist": normalize_text(form_data.get("artist", ""), lowercase=False),
-        "vibe": normalize_text(form_data.get("vibe", ""), lowercase=True),
+        "vibe": vibe,
+        "vibe_terms": [vibe] if vibe else [],
+        "natural_language_request": normalize_text(
+            form_data.get("natural_language_request", ""),
+            lowercase=False,
+        ),
+        "intent_terms": [],
+        "target_audio_profile": {},
     }
 
     return normalized
+
+
+def merge_nlp_intent(normalized_preferences, intent):
+    """Merge NLP-extracted intent into the normalized form preferences."""
+    merged = dict(normalized_preferences or {})
+    intent = intent or {}
+
+    merged["mood"] = combine_inputs(
+        merged.get("mood", []),
+        intent.get("mood", []),
+        lowercase=True,
+    )
+    merged["genre"] = combine_inputs(
+        merged.get("genre", []),
+        intent.get("genre", []),
+        lowercase=True,
+    )
+
+    vibe_terms = combine_inputs(
+        [merged.get("vibe", "")] if merged.get("vibe") else [],
+        intent.get("vibe", []),
+        lowercase=True,
+    )
+    merged["vibe_terms"] = vibe_terms
+    if not merged.get("vibe") and vibe_terms:
+        merged["vibe"] = vibe_terms[0]
+
+    if not merged.get("artist") and intent.get("artist"):
+        merged["artist"] = normalize_text(intent.get("artist", ""), lowercase=False)
+
+    merged["intent_terms"] = normalize_list(intent.get("intent_terms", []), lowercase=True)
+    merged["target_audio_profile"] = {
+        "energy": intent.get("energy"),
+        "valence": intent.get("valence"),
+        "danceability": intent.get("danceability"),
+        "acousticness": intent.get("acousticness"),
+        "tempo": intent.get("tempo"),
+    }
+    merged["nlp_interpretation"] = intent
+    return merged
