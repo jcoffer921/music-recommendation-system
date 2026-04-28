@@ -6,6 +6,7 @@
 {% block content %}
 {% set values = previous_values or {} %}
 {% set active = active_tab or 'standard' %}
+{# Hero explains the two recommendation modes before the form tabs #}
 <section class="hero hero-home">
     <div class="hero-copy">
         <span class="hero-kicker">Music discovery workspace</span>
@@ -15,10 +16,12 @@
 </section>
 
 {% if form_error %}
+{# Flask re-renders this page with the active tab and previous values on errors #}
 <div class="error-message page-error">{{ form_error }}</div>
 {% endif %}
 
 <div class="form-container form-container-home">
+    {# The tabs switch visible panels client-side; each panel posts to its own route #}
     <div class="home-tabs" role="tablist" aria-label="Recommendation modes">
         <button
             type="button"
@@ -48,6 +51,7 @@
             <fieldset>
                 <legend>Your Music Preferences</legend>
 
+                {# Hybrid fields combine predefined pills with custom typed descriptors #}
                 <div class="form-group hybrid-group" data-hybrid-field="mood" data-max-selections="5">
                     <label for="mood">What's your current mood?</label>
                     <div class="pill-group" data-pill-group="mood" aria-label="Mood options">
@@ -73,6 +77,7 @@
                     <p class="field-hint">Pick up to 5 moods or type your own. Selected pills are added automatically.</p>
                 </div>
 
+                {# Genre follows the same pill-plus-custom model as mood #}
                 <div class="form-group hybrid-group" data-hybrid-field="genre" data-max-selections="5">
                     <label for="genre">Favorite music genre?</label>
                     <div class="pill-group" data-pill-group="genre" aria-label="Genre options">
@@ -122,18 +127,43 @@
             <fieldset>
                 <legend>MusicMe AI Request</legend>
 
-                <div class="form-group">
-                    <label for="natural_language_request">Describe what you want in your own words</label>
-                    <textarea
-                        id="natural_language_request"
-                        name="natural_language_request"
-                        class="prompt-textarea"
-                        rows="5"
-                        placeholder="e.g., I want upbeat late-night driving music with glossy synths, medium energy, and a little nostalgia."
-                    >{{ values.get('natural_language_request', '') }}</textarea>
-                    <p class="field-hint">MusicMe AI uses Ollama to interpret intent and convert your request into mood, energy, vibe, and genre cues.</p>
+                {# JavaScript turns this container into a conversational Ollama interview #}
+                <div class="form-group ai-interview-group">
+                    <div
+                        id="aiInterview"
+                        data-ai-interview
+                        data-existing-request="{{ values.get('natural_language_request', '') }}"
+                    >
+                        <div id="aiInterviewMessages" class="ai-chat-messages" aria-live="polite">
+                            <div class="ai-chat-message ai-chat-message-assistant">Give me a moment to start the interview.</div>
+                        </div>
+                        {# Completed chat answers are injected here as hidden form inputs #}
+                        <div id="aiInterviewAnswers"></div>
+                        <div class="ai-chat-composer">
+                            <label for="aiInterviewInput" class="sr-only">Reply to MusicMe AI</label>
+                            <textarea
+                                id="aiInterviewInput"
+                                class="prompt-textarea"
+                                rows="3"
+                                placeholder="Type your answer..."
+                            ></textarea>
+                            <button id="aiInterviewReplyButton" type="button" class="btn-secondary btn-inline">Reply</button>
+                        </div>
+                    </div>
+                    {# No-JS fallback still gives the AI route a text signal to parse #}
+                    <noscript>
+                        <label for="natural_language_request">MusicMe AI question</label>
+                        <textarea
+                            id="natural_language_request"
+                            name="natural_language_request"
+                            class="prompt-textarea"
+                            rows="5"
+                            placeholder="Tell MusicMe AI what you want to hear."
+                        >{{ values.get('natural_language_request', '') }}</textarea>
+                    </noscript>
                 </div>
 
+                {# Optional anchors let users steer results after the interview #}
                 <div class="form-group">
                     <label for="ai_artist">Optional artist anchor</label>
                     <input type="text" id="ai_artist" name="ai_artist" placeholder="e.g., SZA, Fred again.., The Weeknd" value="{{ values.get('ai_artist', values.get('artist', '')) }}">

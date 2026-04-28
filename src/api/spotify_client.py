@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+# Spotipy and Spotify API usage follows Spotify Web API documentation
+# Reference: Spotify Developer site Web API and Authorization guides
+
+# Low-level Spotify API adapter Higher layers should receive normalized track
+# dictionaries and never depend directly on Spotipy response shapes
 import spotipy
 from spotipy.exceptions import SpotifyException
 from spotipy.oauth2 import SpotifyClientCredentials
@@ -13,6 +18,8 @@ class SpotifyClient:
     def __init__(self):
         self.using_access_token = False
 
+        # A manually supplied access token is useful for local testing; production
+        # flows normally use client credentials or session OAuth tokens
         if SPOTIFY_ACCESS_TOKEN:
             self.client = spotipy.Spotify(auth=SPOTIFY_ACCESS_TOKEN)
             self.using_access_token = True
@@ -32,10 +39,12 @@ class SpotifyClient:
 
     @staticmethod
     def _clean_query(query):
+        """Collapse whitespace before sending a search query to Spotify."""
         return " ".join(str(query).split()).strip()
 
     @staticmethod
     def _coerce_limit(limit, default=20, maximum=50):
+        """Keep caller-provided limits inside Spotify's supported range."""
         try:
             safe_limit = int(limit)
         except (TypeError, ValueError):
@@ -45,6 +54,7 @@ class SpotifyClient:
 
     @staticmethod
     def _normalize_track(track):
+        """Reduce Spotify's large track payload to fields the app renders/ranks."""
         album = track.get("album") or {}
         images = album.get("images") or []
         primary_image = images[0]["url"] if images else None
@@ -84,6 +94,7 @@ class SpotifyClient:
         return bool(SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET)
 
     def _switch_to_client_credentials(self):
+        """Fallback from an expired manual token to app-level credentials."""
         if not self._has_client_credentials():
             return False
 
@@ -96,6 +107,8 @@ class SpotifyClient:
         return True
 
     def _execute_track_search(self, query, market="US", limit=None):
+        """Run a raw Spotify track search and normalize its items."""
+        # Only track search is used because the app recommends songs, not albums/shows
         search_kwargs = {
             "q": query,
             "type": "track",
@@ -109,6 +122,7 @@ class SpotifyClient:
         return [self._normalize_track(track) for track in items]
 
     def search_tracks(self, query, limit=20, market="US"):
+        """Search Spotify for tracks, retrying with smaller limits when needed."""
         cleaned_query = self._clean_query(query)
         if not cleaned_query:
             return []
@@ -124,6 +138,7 @@ class SpotifyClient:
             attempted_limits.append(current_limit)
 
             try:
+                # Retry behavior keeps the UI usable when Spotify rejects a request shape
                 return self._execute_track_search(
                     cleaned_query,
                     market=market,
@@ -131,6 +146,7 @@ class SpotifyClient:
                 )
             except SpotifyException as exc:
                 print(f"Spotify track search failed with limit={current_limit}: {exc}")
+                # Expired manual tokens should not break environments with client credentials
                 if self.using_access_token and self._is_invalid_access_token_error(exc):
                     if self._switch_to_client_credentials():
                         return self.search_tracks(cleaned_query, limit=limit, market=market)
@@ -139,6 +155,7 @@ class SpotifyClient:
                         "or configure SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET."
                     ) from exc
                 if self._is_invalid_limit_error(exc):
+                    # Some Spotify contexts reject explicit limit values; retry without one
                     try:
                         return self._execute_track_search(
                             cleaned_query,
@@ -151,6 +168,7 @@ class SpotifyClient:
         return []
 
     def get_audio_features(self, track_ids):
+        """Fetch audio features in Spotify's supported batch size."""
         if not track_ids:
             return []
 
@@ -162,6 +180,7 @@ class SpotifyClient:
 
         try:
             for index in range(0, len(normalized_ids), 100):
+                # Spotify accepts audio-feature lookups in batches of up to 100 IDs
                 batch_ids = normalized_ids[index:index + 100]
                 batch_features = self.client.audio_features(batch_ids) or []
 
@@ -175,14 +194,15 @@ class SpotifyClient:
                     "Spotify access token is invalid or expired. Refresh SPOTIFY_ACCESS_TOKEN "
                     "or configure SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET."
                 ) from exc
-            # New/dev-mode Spotify apps can receive 403 for Audio Features.
-            # Fall back to metadata-only ranking instead of failing the request.
+            # New/dev-mode Spotify apps can receive 403 for Audio Features
+            # Fall back to metadata-only ranking instead of failing the request
             print(f"Spotify audio-features unavailable: {exc}")
             return [{} for _ in track_ids]
 
         return [feature_map.get(track_id, {}) for track_id in track_ids]
 
     def print_track_results(self, track_name):
+        """Debug helper for quickly inspecting Spotify search results in the CLI."""
         tracks = self.search_tracks(track_name)
 
         if not tracks:

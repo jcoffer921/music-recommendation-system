@@ -3,6 +3,7 @@
 {% block title %}Recommendations{% endblock %}
 
 {% block content %}
+{# Recommendations are rendered from the payload stored in Flask session #}
 <section class="hero hero-split">
     <div class="hero-copy">
         <span class="hero-kicker">Recommendations</span>
@@ -17,6 +18,7 @@
 <section class="recommendations-shell">
     <div class="recommendations-topbar">
         {% if recommendation_data %}
+        {# scriptjs fills this summary from window__INITIAL_RECOMMENDATIONS__ #}
         <div id="summary" class="summary-section topbar-card"></div>
         {% else %}
         <div class="summary-section empty-state-card topbar-card">
@@ -30,11 +32,13 @@
     </div>
 
     {% if recommendation_data %}
+    {# Track cards are client-rendered so playback buttons can bind consistently #}
     <div id="results" class="results-container recommendations-results-layout">
         <div id="recommendations" class="recommendations-section recommendations-grid-panel"></div>
     </div>
     {% endif %}
 
+    {# Playback is optional; recommendations still work without Spotify login #}
     <div class="recommendations-player-wrap">
         <section id="spotifyPlaybackPanel" class="player-panel workspace-stack">
             <div id="spotifyAuthCard" class="player-card">
@@ -74,6 +78,7 @@
 
 {% if recommendation_data %}
 <script>
+// Hydrate the recommendations page without a second server request
 window.__INITIAL_RECOMMENDATIONS__ = {{ recommendation_data|tojson }};
 </script>
 {% endif %}

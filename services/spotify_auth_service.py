@@ -1,5 +1,8 @@
 """Helpers for Spotify Authorization Code flow and token refresh."""
 
+# OAuth flow structure follows Spotify Web API Authorization Code documentation
+# Reference: Spotify Developer site Authorization Code Flow guide
+
 from __future__ import annotations
 
 import secrets
@@ -15,6 +18,7 @@ SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
 
 
 def _require_auth_config():
+    """Fail early when OAuth routes are used without Spotify app credentials."""
     if not SPOTIFY_CLIENT_ID or not SPOTIFY_CLIENT_SECRET:
         raise ValueError(
             "Spotify OAuth is not configured. Set SPOTIFY_CLIENT_ID and "
@@ -22,13 +26,9 @@ def _require_auth_config():
         )
 
 
-def build_login_url():
-    """Return the Spotify authorize URL and generated state value."""
-    return build_login_url_for_redirect(SPOTIFY_REDIRECT_URI)
-
-
 def resolve_redirect_uri(current_origin=None):
     """Use configured redirect URI or derive it from the current host."""
+    # In deployed environments a fixed redirect URI is preferred; locally we derive it
     if SPOTIFY_REDIRECT_URI:
         return SPOTIFY_REDIRECT_URI
 
@@ -44,6 +44,7 @@ def resolve_redirect_uri(current_origin=None):
 def build_login_url_for_redirect(redirect_uri):
     """Return the Spotify authorize URL and generated state value for the provided redirect URI."""
     _require_auth_config()
+    # State is stored in the Flask session and checked when Spotify redirects back
     state = secrets.token_urlsafe(24)
     params = {
         "client_id": SPOTIFY_CLIENT_ID,
@@ -57,6 +58,7 @@ def build_login_url_for_redirect(redirect_uri):
 
 
 def _token_request(payload):
+    """Send a token endpoint request using HTTP Basic auth with app credentials."""
     _require_auth_config()
     response = requests.post(
         SPOTIFY_TOKEN_URL,
@@ -69,6 +71,7 @@ def _token_request(payload):
 
 
 def _normalize_token_payload(token_data, previous_refresh_token=None):
+    """Shape Spotify token responses for session storage."""
     expires_in = int(token_data.get("expires_in", 3600))
     return {
         "access_token": token_data.get("access_token", ""),
@@ -82,6 +85,7 @@ def _normalize_token_payload(token_data, previous_refresh_token=None):
 def exchange_code_for_token(code, redirect_uri=None):
     """Exchange an authorization code for Spotify tokens."""
     resolved_redirect_uri = redirect_uri or SPOTIFY_REDIRECT_URI
+    # The redirect URI must match the URI used when the login URL was generated
     token_data = _token_request(
         {
             "grant_type": "authorization_code",

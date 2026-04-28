@@ -1,12 +1,47 @@
 import json
 import re
 
+# Ollama-facing helper It keeps model prompts, fallback behavior, and response
+# cleanup in one place so Flask routes do not need prompt-specific logic
 import requests
 from src.configs import OLLAMA_URL, OLLAMA_MODEL
 
 
 class OllamaInterviewer:
+    # Keep non-song media terms out of structured intent before Spotify search
+    NON_MUSIC_INTENT_TERMS = {
+        "broadcast",
+        "channel",
+        "episode",
+        "fm",
+        "podcast",
+        "radio",
+        "show",
+        "station",
+        "stations",
+    }
+
+    # Deterministic fallbacks keep the chat usable when Ollama is not running
+    FALLBACK_QUESTIONS = [
+        {
+            "id": "moment",
+            "question": "What are you doing or getting ready for while listening?",
+            "placeholder": "e.g., working late, driving, getting ready to go out",
+        },
+        {
+            "id": "feeling",
+            "question": "How should the music make you feel?",
+            "placeholder": "e.g., focused, confident, calm, nostalgic, energized",
+        },
+        {
+            "id": "sound",
+            "question": "What sounds, genres, or artists should guide the recommendations?",
+            "placeholder": "e.g., glossy synth pop, SZA, mellow R&B, 90s rock",
+        },
+    ]
+
     def _generate(self, prompt, timeout=20):
+        """Send a non-streaming prompt to the configured local Ollama model."""
         payload = {
             "model": OLLAMA_MODEL,
             "prompt": prompt,
@@ -26,6 +61,7 @@ class OllamaInterviewer:
         return cleaned_value or default_text
 
     def ask_questions(self):
+        """Legacy command-line interview used by main.py."""
         print("\n--- Music Interview ---")
 
         mood = input("What mood are you in? ")
@@ -39,6 +75,117 @@ class OllamaInterviewer:
             "genre": genre,
             "discovery": discovery
         }
+
+    def get_questions(self):
+        """Use Ollama to generate a short music interview, with stable fallback questions."""
+        prompt = """
+        Create a concise music recommendation interview.
+
+        Return only valid JSON in this exact shape:
+        {
+          "questions": [
+            {
+              "id": "short_snake_case_id",
+              "question": "one clear user-facing question",
+              "placeholder": "short example answer"
+            }
+          ]
+        }
+
+        Requirements:
+        - Ask exactly 3 questions
+        - Cover listening context, desired feeling, and sound or artist direction
+        - Do not ask for private personal data
+        - Do not include markdown or explanation
+        """
+
+        try:
+            raw_response = self._generate(prompt, timeout=6)
+            parsed = self._extract_json_object(raw_response)
+            questions = parsed.get("questions", []) if isinstance(parsed, dict) else []
+            cleaned_questions = []
+            seen_ids = set()
+
+            # Validate model output before sending it to the browser
+            for index, question in enumerate(questions):
+                if not isinstance(question, dict):
+                    continue
+
+                raw_id = str(question.get("id") or f"question_{index + 1}").strip().lower()
+                question_id = re.sub(r"[^a-z0-9_]+", "_", raw_id).strip("_") or f"question_{index + 1}"
+                question_text = " ".join(str(question.get("question", "")).split())
+                placeholder = " ".join(str(question.get("placeholder", "")).split())
+
+                if not question_text or question_id in seen_ids:
+                    continue
+
+                cleaned_questions.append(
+                    {
+                        "id": question_id,
+                        "question": question_text,
+                        "placeholder": placeholder,
+                    }
+                )
+                seen_ids.add(question_id)
+
+                if len(cleaned_questions) == 3:
+                    break
+
+            return cleaned_questions if len(cleaned_questions) == 3 else self.FALLBACK_QUESTIONS
+        except requests.RequestException:
+            return self.FALLBACK_QUESTIONS
+
+    def get_next_question(self, history):
+        """Ask Ollama for the next conversational interview question."""
+        # Only complete question/answer turns are included in the model context
+        cleaned_history = []
+        for item in history or []:
+            question = " ".join(str(item.get("question", "")).split()) if isinstance(item, dict) else ""
+            answer = " ".join(str(item.get("answer", "")).split()) if isinstance(item, dict) else ""
+            if question and answer:
+                cleaned_history.append({"question": question, "answer": answer})
+
+        if len(cleaned_history) >= len(self.FALLBACK_QUESTIONS):
+            return {"is_complete": True, "question": ""}
+
+        # The fallback question matches the current turn index for predictable recovery
+        fallback_question = self.FALLBACK_QUESTIONS[len(cleaned_history)]["question"]
+        prompt = f"""
+        You are MusicMe AI interviewing a user before recommending songs.
+
+        Conversation so far:
+        {json.dumps(cleaned_history, ensure_ascii=True)}
+
+        Return only valid JSON:
+        {{
+          "is_complete": false,
+          "question": "one short natural follow-up question"
+        }}
+
+        Rules:
+        - Ask exactly one question
+        - Sound conversational, not like a form
+        - Use the user's previous answers to choose the next question
+        - Stop after 3 answered questions by returning {{"is_complete": true, "question": ""}}
+        - Do not ask for private personal data
+        - Do not include markdown or explanation
+        """
+
+        try:
+            raw_response = self._generate(prompt, timeout=6)
+            parsed = self._extract_json_object(raw_response)
+            if not isinstance(parsed, dict):
+                return {"is_complete": False, "question": fallback_question}
+
+            is_complete = bool(parsed.get("is_complete"))
+            question = " ".join(str(parsed.get("question", "")).split())
+
+            if is_complete and len(cleaned_history) >= len(self.FALLBACK_QUESTIONS):
+                return {"is_complete": True, "question": ""}
+
+            return {"is_complete": False, "question": question or fallback_question}
+        except requests.RequestException:
+            return {"is_complete": False, "question": fallback_question}
 
     def _fallback_summary(self, responses):
         """Build a readable summary when the model is unavailable or off-format."""
@@ -56,6 +203,7 @@ class OllamaInterviewer:
         )
 
     def _extract_json_object(self, raw_response):
+        """Parse a JSON object even when the model wraps it in surrounding text."""
         if not raw_response:
             return {}
 
@@ -74,8 +222,10 @@ class OllamaInterviewer:
             return {}
 
     def _fallback_intent(self, free_text):
+        """Keyword-based intent extraction when Ollama is unavailable or off-format."""
         text = " ".join(str(free_text or "").lower().split())
 
+        # These mappings intentionally stay conservative to avoid hallucinated genres
         keyword_map = {
             "mood": {
                 "happy": ["happy", "joyful", "sunny", "good mood"],
@@ -114,6 +264,7 @@ class OllamaInterviewer:
                 if any(phrase in text for phrase in phrases):
                     extracted[bucket].append(label)
 
+        # Audio targets give the ranker useful numeric hints even with sparse tags
         energy = 0.82 if any(word in text for word in ["workout", "gym", "hype", "party"]) else None
         if energy is None and any(word in text for word in ["calm", "study", "late night", "chill"]):
             energy = 0.3
@@ -142,6 +293,22 @@ class OllamaInterviewer:
             "intent_terms": terms,
         }
 
+    def _clean_intent_terms(self, values):
+        """Deduplicate model tags and strip terms that are not song descriptors."""
+        cleaned_terms = []
+        seen_terms = set()
+
+        for value in values or []:
+            cleaned = " ".join(str(value).strip().lower().split())
+            if not cleaned or cleaned in self.NON_MUSIC_INTENT_TERMS or cleaned in seen_terms:
+                continue
+
+            cleaned_terms.append(cleaned)
+            seen_terms.add(cleaned)
+
+        return cleaned_terms
+
+    # AI-Assistance 
     def interpret_intent(self, free_text):
         """Use Ollama to convert a natural-language music request into structured features."""
         if not str(free_text or "").strip():
@@ -180,6 +347,9 @@ class OllamaInterviewer:
 
         Rules:
         - Infer listening intent from the language
+        - Recommend songs or tracks only
+        - Ignore requests for radio stations, broadcasts, podcasts, shows, episodes, or channels
+        - Do not include "radio", "station", "podcast", "show", "episode", "broadcast", "channel", or "fm" in any output field
         - Use concise tags
         - Do not add explanation
         - Prefer null over guessing when the request is ambiguous
@@ -192,24 +362,29 @@ class OllamaInterviewer:
                 return self._fallback_intent(free_text)
 
             fallback = self._fallback_intent(free_text)
+            # Preserve model-provided numeric cues, but use fallback values if they are absent
+            artist = " ".join(str(parsed.get("artist", "")).split())
+            if artist.lower() in self.NON_MUSIC_INTENT_TERMS:
+                artist = ""
+
             return {
-                "mood": [str(item).strip().lower() for item in parsed.get("mood", []) if str(item).strip()],
-                "genre": [str(item).strip().lower() for item in parsed.get("genre", []) if str(item).strip()],
-                "vibe": [str(item).strip().lower() for item in parsed.get("vibe", []) if str(item).strip()],
-                "artist": " ".join(str(parsed.get("artist", "")).split()),
+                "mood": self._clean_intent_terms(parsed.get("mood", [])),
+                "genre": self._clean_intent_terms(parsed.get("genre", [])),
+                "vibe": self._clean_intent_terms(parsed.get("vibe", [])),
+                "artist": artist,
                 "energy": parsed.get("energy") if isinstance(parsed.get("energy"), (int, float)) else fallback.get("energy"),
                 "valence": parsed.get("valence") if isinstance(parsed.get("valence"), (int, float)) else fallback.get("valence"),
                 "danceability": parsed.get("danceability") if isinstance(parsed.get("danceability"), (int, float)) else fallback.get("danceability"),
                 "acousticness": parsed.get("acousticness") if isinstance(parsed.get("acousticness"), (int, float)) else fallback.get("acousticness"),
                 "tempo": int(parsed.get("tempo")) if isinstance(parsed.get("tempo"), (int, float)) else fallback.get("tempo"),
-                "intent_terms": [
-                    str(item).strip().lower() for item in parsed.get("intent_terms", []) if str(item).strip()
-                ] or fallback.get("intent_terms", []),
+                "intent_terms": self._clean_intent_terms(parsed.get("intent_terms", []))
+                or fallback.get("intent_terms", []),
             }
         except requests.RequestException:
             return self._fallback_intent(free_text)
 
     def summarize(self, responses):
+        """Generate a short human-readable explanation of the cleaned preferences."""
         prompt = f"""
         Write a short, appealing music preference summary for a music recommendation app.
 

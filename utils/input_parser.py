@@ -17,11 +17,13 @@ def normalize_list(values, lowercase=True):
     if not values:
         return []
 
+    # HTML forms submit comma-separated hidden fields, while tests may pass lists
     if isinstance(values, str):
         raw_items = values.split(",")
     else:
         raw_items = values
 
+    # Preserve first-seen order so query construction stays predictable
     normalized_items = []
     seen = set()
 
@@ -41,6 +43,7 @@ def combine_inputs(selected_values, custom_value, lowercase=True):
     selected_items = normalize_list(selected_values, lowercase=lowercase)
     custom_items = normalize_list(custom_value, lowercase=lowercase)
 
+    # Selected pills and custom text share one final list for downstream ranking
     combined = []
     seen = set()
 
@@ -56,6 +59,7 @@ def combine_inputs(selected_values, custom_value, lowercase=True):
 def normalize_form_data(form_data):
     """Return a clean, structured version of the submitted MusicMe form data."""
     vibe = normalize_text(form_data.get("vibe", ""), lowercase=True)
+    # All recommendation paths consume this common shape, even when fields are blank
     normalized = {
         "mood": combine_inputs(
             form_data.get("selected_moods", []),
@@ -86,6 +90,7 @@ def merge_nlp_intent(normalized_preferences, intent):
     merged = dict(normalized_preferences or {})
     intent = intent or {}
 
+    # NLP output augments form selections instead of replacing explicit user choices
     merged["mood"] = combine_inputs(
         merged.get("mood", []),
         intent.get("mood", []),
@@ -104,11 +109,14 @@ def merge_nlp_intent(normalized_preferences, intent):
     )
     merged["vibe_terms"] = vibe_terms
     if not merged.get("vibe") and vibe_terms:
+        # Keep a single primary vibe for older code paths and templates
         merged["vibe"] = vibe_terms[0]
 
     if not merged.get("artist") and intent.get("artist"):
+        # Explicit form artist wins over the model-inferred artist
         merged["artist"] = normalize_text(intent.get("artist", ""), lowercase=False)
 
+    # Numeric targets are consumed by the audio-feature alignment scorer
     merged["intent_terms"] = normalize_list(intent.get("intent_terms", []), lowercase=True)
     merged["target_audio_profile"] = {
         "energy": intent.get("energy"),

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+# Flask entrypoint: owns routing, session state, and the handoff between forms,
+# Ollama intent parsing, Spotify search, and recommendation ranking.
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from flask_cors import CORS
 import requests
+import re
 import time
 
 from services.recommendation_service import rank_tracks
@@ -28,12 +31,30 @@ app.secret_key = FLASK_SECRET_KEY
 CORS(app)
 
 
+# Terms that should never influence AI search or ranking because the app
+# recommends songs, not stations, podcasts, channels, or broadcast content.
+NON_MUSIC_REQUEST_TERMS = {
+    "broadcast",
+    "channel",
+    "episode",
+    "fm",
+    "podcast",
+    "radio",
+    "show",
+    "station",
+    "stations",
+}
+
+
 def _get_valid_spotify_session_token():
+    """Return a usable Spotify token from the Flask session, refreshing when possible."""
+    # Playback routes call this helper so they do not need to know refresh details.
     token_payload = session.get("spotify_token")
     if not token_payload:
         return None
 
     if token_is_expired(token_payload):
+        # Spotify access tokens expire quickly; refresh tokens keep the login alive.
         refresh_token = token_payload.get("refresh_token")
         if not refresh_token:
             session.pop("spotify_token", None)
@@ -47,7 +68,7 @@ def _get_valid_spotify_session_token():
 
 
 def _build_standard_recommendation_payload(raw_form_data):
-    """Build recommendations using the standard non-AI preference flow."""
+    # Standard mode trusts structured form inputs and avoids NLP 
     normalized_preferences = normalize_form_data(raw_form_data)
     spotify_query = build_spotify_query(normalized_preferences)
     spotify_queries = build_spotify_queries(normalized_preferences)
@@ -58,6 +79,7 @@ def _build_standard_recommendation_payload(raw_form_data):
     interviewer = OllamaInterviewer()
     summary = interviewer.summarize(normalized_preferences)
 
+    # Search returns a wider candidate pool than the final result count; ranking trims it down
     spotify_service = SpotifyService()
     candidate_tracks, audio_features = spotify_service.search_tracks_with_features(
         spotify_query,
@@ -88,8 +110,34 @@ def _build_standard_recommendation_payload(raw_form_data):
     }
 
 
+def _build_ai_interview_request(raw_form_data):
+    answer_parts = []
+
+    # Browser chat turns are posted as ai_answer_1, ai_answer_2, ...
+    # Sorting keeps the conversation order stable before NLP parsing
+    for key, value in sorted((raw_form_data or {}).items()):
+        if not key.startswith("ai_answer_"):
+            continue
+
+        cleaned_value = " ".join(str(value or "").strip().split())
+        if cleaned_value:
+            answer_parts.append(cleaned_value)
+
+    free_text = " ".join(str(raw_form_data.get("natural_language_request", "") or "").strip().split())
+    if free_text:
+        answer_parts.insert(0, free_text)
+
+    # Remove media-source wording before it can bias TF-IDF or Spotify query construction
+    request_text = " ".join(answer_parts)
+    for term in sorted(NON_MUSIC_REQUEST_TERMS, key=len, reverse=True):
+        request_text = re.sub(rf"\b{re.escape(term)}\b", " ", request_text, flags=re.IGNORECASE)
+
+    return " ".join(request_text.split())
+
+
 def _build_ai_recommendation_payload(raw_form_data):
-    """Build recommendations using the premium MusicMe AI flow."""
+    # AI mode converts the chat interview into structured cues before searching Spotify
+    natural_language_request = _build_ai_interview_request(raw_form_data)
     normalized_preferences = normalize_form_data(
         {
             "selected_moods": raw_form_data.get("selected_moods", ""),
@@ -98,17 +146,19 @@ def _build_ai_recommendation_payload(raw_form_data):
             "custom_genre": raw_form_data.get("custom_genre", ""),
             "artist": raw_form_data.get("artist") or raw_form_data.get("ai_artist", ""),
             "vibe": raw_form_data.get("vibe") or raw_form_data.get("ai_vibe", ""),
-            "natural_language_request": raw_form_data.get("natural_language_request", ""),
+            "natural_language_request": natural_language_request,
         }
     )
     interviewer = OllamaInterviewer()
+    # Ollama converts conversational answers into the same fields used by the ranker
     parsed_intent = interviewer.interpret_intent(normalized_preferences.get("natural_language_request", ""))
     normalized_preferences = merge_nlp_intent(normalized_preferences, parsed_intent)
+    # Query generation intentionally uses extracted tags instead of the raw chat text
     spotify_queries = build_ai_spotify_queries(normalized_preferences)
     spotify_query = spotify_queries[0] if spotify_queries else ""
 
     if not spotify_query:
-        raise ValueError("Please describe what you want for MusicMe AI, or add an artist or vibe to guide the search.")
+        raise ValueError("Please answer at least one MusicMe AI interview question, or add an artist or vibe to guide the search.")
 
     summary = interviewer.summarize(normalized_preferences)
 
@@ -145,7 +195,7 @@ def _build_ai_recommendation_payload(raw_form_data):
 
 @app.route("/", methods=["GET"])
 def home():
-    """Render the homepage with the recommendation form."""
+    # Render the homepage with the recommendation form
     active_tab = request.args.get("tab", "standard")
     if active_tab not in {"standard", "ai"}:
         active_tab = "standard"
@@ -160,9 +210,10 @@ def about():
 
 @app.route("/auth/login", methods=["GET"])
 def spotify_login():
-    """Start the Spotify Authorization Code flow."""
+    # redirect to /auth/callback, not directly to the player page
     redirect_uri = resolve_redirect_uri(request.url_root)
     login_url, state = build_login_url_for_redirect(redirect_uri)
+    # Preserve the page the user came from so OAuth returns them to the right workspace
     next_path = request.args.get("next", "")
     if not next_path.startswith("/"):
         next_path = url_for("home")
@@ -174,11 +225,12 @@ def spotify_login():
 
 @app.route("/auth/callback", methods=["GET"])
 def spotify_callback():
-    """Handle Spotify OAuth callback and persist the session token."""
+    # Spotify sends either an error or an authorization code back to this route
     error = request.args.get("error")
     if error:
         return redirect(url_for("home", auth_error=error))
 
+    # State validation prevents a forged callback from attaching a token to this session
     returned_state = request.args.get("state", "")
     expected_state = session.get("spotify_auth_state", "")
     if not returned_state or returned_state != expected_state:
@@ -199,7 +251,7 @@ def spotify_callback():
 
 @app.route("/auth/token", methods=["GET"])
 def spotify_token():
-    """Return the active Spotify access token for the Web Playback SDK."""
+    """Returns the active Spotify access token for the Web Playback SDK."""
     token_payload = _get_valid_spotify_session_token()
     if not token_payload:
         return jsonify({"access_token": ""}), 200
@@ -215,6 +267,7 @@ def spotify_token():
 @app.route("/auth/logout", methods=["POST"])
 def spotify_logout():
     """Clear the current Spotify login session."""
+    # Logging out only clears this app's session; it does not log out spotify.com
     session.pop("spotify_token", None)
     session.pop("spotify_auth_state", None)
     return jsonify({"ok": True}), 200
@@ -239,6 +292,7 @@ def spotify_player_play():
         "Content-Type": "application/json",
     }
 
+    # Spotify playback must be transferred to the SDK device before a URI can start
     transfer_response = requests.put(
         "https://api.spotify.com/v1/me/player",
         json={"device_ids": [device_id], "play": False},
@@ -253,8 +307,8 @@ def spotify_player_play():
             }
         ), transfer_response.status_code
 
-    # Spotify can acknowledge transfer before the new device is fully ready.
-    # Give it a brief moment so the subsequent play request does not race it.
+    # Spotify can acknowledge transfer before the new device is fully ready
+    # Give it a brief moment so the subsequent play request does not race it
     time.sleep(0.4)
 
     play_response = requests.put(
@@ -283,6 +337,7 @@ def spotify_player_play():
 @app.route("/recommendations", methods=["GET"])
 def recommendations_page():
     """Render the recommendations page using the most recent recommendation payload."""
+    # Results live in the session so refresh can show the last generated queue
     recommendation_data = session.get("latest_recommendations")
     return render_template("recommendations.html", recommendation_data=recommendation_data)
 
@@ -293,6 +348,7 @@ def generate_recommendations_page():
     try:
         raw_form_data = request.form.to_dict(flat=True)
         recommendation_data = _build_standard_recommendation_payload(raw_form_data)
+        # Store the payload once so the recommendations page can render after redirect
         session["latest_recommendations"] = recommendation_data
         return redirect(url_for("recommendations_page"))
     except ValueError as exc:
@@ -331,6 +387,7 @@ def generate_ai_recommendations_page():
     try:
         raw_form_data = request.form.to_dict(flat=True)
         recommendation_data = _build_ai_recommendation_payload(raw_form_data)
+        # Keep AI and standard results behind the same recommendations page template
         session["latest_recommendations"] = recommendation_data
         return redirect(url_for("recommendations_page"))
     except ValueError as exc:
@@ -369,6 +426,7 @@ def get_recommendations():
     Get music recommendations based on user responses.
     Expected JSON body: { "responses": { "question1": "answer1", ... } }
     """
+    # JSON route kept for API-style callers; the web form posts to /recommendations
     try:
         data = request.get_json() or {}
 
@@ -391,6 +449,7 @@ def get_recommendations():
 @app.route("/recommend-ai", methods=["POST"])
 def get_ai_recommendations():
     """Get premium MusicMe AI recommendations based on natural-language requests."""
+    # JSON route kept for API-style callers; the web form posts to /musicme-ai/recommendations.
     try:
         data = request.get_json() or {}
 
@@ -413,10 +472,27 @@ def get_ai_recommendations():
 @app.route("/interview-questions", methods=["GET"])
 def get_questions():
     """Get the interview questions."""
+    # Legacy bulk-question endpoint retained for clients that still expect it
     try:
         interviewer = OllamaInterviewer()
-        questions = interviewer.get_questions() if hasattr(interviewer, "get_questions") else []
+        questions = interviewer.get_questions()
         return jsonify({"questions": questions}), 200
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/interview-next", methods=["POST"])
+def get_next_interview_question():
+    """Get the next conversational MusicMe AI interview question."""
+    # The frontend posts short Q/A history so Ollama can ask a follow-up
+    try:
+        data = request.get_json() or {}
+        history = data.get("history", [])
+        if not isinstance(history, list):
+            return jsonify({"error": "history must be a list"}), 400
+
+        interviewer = OllamaInterviewer()
+        return jsonify(interviewer.get_next_question(history)), 200
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 

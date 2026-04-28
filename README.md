@@ -1,5 +1,7 @@
 # Music Recommendation System
 
+<!-- Project overview for setup, architecture, and local development. -->
+
 This app collects music preferences, queries Spotify, and ranks tracks against the user's stated mood, genre, artist, vibe, and natural-language request.
 
 ## Stack

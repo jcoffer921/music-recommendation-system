@@ -1,3 +1,9 @@
+// JavaScript implementation was developed with AI-assisted debugging support from OpenAI ChatGPT, 
+// mainly for Spotify Web Playback SDK state handling and refresh behavior
+
+
+// Browser behavior for form tabs, MusicMe AI chat, recommendations rendering,
+// and Spotify Web Playback SDK controls
 const recommendationForm = document.getElementById("recommendationForm");
 const hybridFields = document.querySelectorAll("[data-hybrid-field]");
 const hybridFieldState = {};
@@ -5,7 +11,9 @@ const recommendationsContainer = document.getElementById("recommendations");
 const initialRecommendations = window.__INITIAL_RECOMMENDATIONS__ || null;
 const homeTabButtons = document.querySelectorAll("[data-tab-trigger]");
 const homeTabPanels = document.querySelectorAll("[data-tab-panel]");
+const aiInterviewContainer = document.querySelector("[data-ai-interview]");
 
+// Shared Spotify SDK state; UI rendering reads from this single object
 const spotifyState = {
     player: null,
     deviceId: "",
@@ -23,6 +31,7 @@ const spotifyState = {
 };
 
 function escapeHtml(value) {
+    // Recommendation data and model output are rendered as HTML strings below
     return String(value ?? "")
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
@@ -58,6 +67,7 @@ function uniqueTokens(tokens) {
 }
 
 function initHybridField(field) {
+    // Hybrid fields combine clickable pills with custom comma-separated text
     const fieldKey = field.dataset.hybridField;
     const input = field.querySelector("[data-hybrid-input]");
     const hiddenInput = field.querySelector("[data-selected-values]");
@@ -71,6 +81,7 @@ function initHybridField(field) {
     };
 
     function updatePillUI() {
+        // Disable unselected pills once the per-field selection cap is reached
         pills.forEach((pill) => {
             const key = pill.dataset.pillValue.toLowerCase();
             const isActive = selectedPills.has(key);
@@ -92,6 +103,7 @@ function initHybridField(field) {
     }
 
     function syncFromInputs() {
+        // Rehydrate state when Flask re-renders a failed form submission
         const typedTokens = splitTokens(input.value);
         const selectedTokens = splitTokens(hiddenInput.value);
 
@@ -128,6 +140,7 @@ function initHybridField(field) {
 }
 
 function getSpotifyElements() {
+    // Return null-safe element handles; this script also runs on pages without playback
     return {
         authCard: document.getElementById("spotifyAuthCard"),
         authMessage: document.getElementById("spotifyAuthMessage"),
@@ -214,6 +227,7 @@ function updateNowPlayingUI() {
 }
 
 async function ensureSpotifySdk() {
+    // The SDK is loaded only after auth is confirmed and only on the recommendations page
     if (!document.getElementById("spotifyPlaybackPanel") || !spotifyState.isAuthenticated || spotifyState.player || spotifyState.sdkLoading) {
         return;
     }
@@ -275,6 +289,7 @@ async function ensureSpotifySdk() {
         });
 
         player.addListener("player_state_changed", (state) => {
+            // Null state means Spotify has no active SDK state for this browser device
             if (!state) {
                 spotifyState.isActive = false;
                 updateNowPlayingUI();
@@ -299,6 +314,7 @@ async function ensureSpotifySdk() {
 }
 
 async function bootstrapSpotifyAuth() {
+    // Recommendations can render without auth; playback controls activate only after login
     if (!document.getElementById("spotifyPlaybackPanel")) {
         return;
     }
@@ -307,6 +323,12 @@ async function bootstrapSpotifyAuth() {
         const token = await fetchSpotifyToken();
         spotifyState.isAuthenticated = Boolean(token);
         renderSpotifyAuthState();
+
+        // Recommendations may render before the async auth check completes on refresh
+        // Re-render them after auth state is known so playback buttons stay available
+        if (initialRecommendations) {
+            displayResults(initialRecommendations);
+        }
 
         if (spotifyState.isAuthenticated) {
             setPlayerStatus("Connecting to Spotify...", false);
@@ -330,6 +352,7 @@ async function playTrackInBrowser(uri) {
     }
 
     try {
+        // Browser playback must be activated from a user gesture before Spotify will play
         if (typeof spotifyState.player.activateElement === "function") {
             await spotifyState.player.activateElement();
         }
@@ -360,6 +383,7 @@ async function playTrackInBrowser(uri) {
 }
 
 function displayResults(data) {
+    // Server-rendered recommendation payloads are converted into interactive cards here
     if (!recommendationsContainer) {
         return;
     }
@@ -463,12 +487,14 @@ function hideError() {
 }
 
 function initializeRecommendationsPage() {
+    // Flask injects the latest payload into window__INITIAL_RECOMMENDATIONS__
     if (initialRecommendations) {
         displayResults(initialRecommendations);
     }
 }
 
 function setActiveHomeTab(tabName) {
+    // Tabs are client-side only; each panel still posts to a separate Flask route
     homeTabButtons.forEach((button) => {
         const isActive = button.dataset.tabTrigger === tabName;
         button.classList.toggle("is-active", isActive);
@@ -480,11 +506,182 @@ function setActiveHomeTab(tabName) {
     });
 }
 
+const fallbackAiInterviewQuestions = [
+    "What are you doing or getting ready for while listening?",
+    "How should the music make you feel?",
+    "What sounds, genres, or artists should guide the recommendations?",
+];
+
+const aiInterviewState = {
+    // History is sent to Flask so Ollama can ask one contextual follow-up at a time
+    history: [],
+    currentQuestion: "",
+    fallbackIndex: 0,
+    isComplete: false,
+    isLoading: false,
+};
+
+function getAiInterviewElements() {
+    return {
+        messages: document.getElementById("aiInterviewMessages"),
+        answers: document.getElementById("aiInterviewAnswers"),
+        input: document.getElementById("aiInterviewInput"),
+        replyButton: document.getElementById("aiInterviewReplyButton"),
+        submitButton: aiInterviewContainer?.closest("form")?.querySelector('button[type="submit"]'),
+    };
+}
+
+function appendAiChatMessage(role, text) {
+    const elements = getAiInterviewElements();
+    if (!elements.messages) {
+        return;
+    }
+
+    const message = document.createElement("div");
+    message.className = `ai-chat-message ai-chat-message-${role}`;
+    message.textContent = text;
+    elements.messages.appendChild(message);
+    elements.messages.scrollTop = elements.messages.scrollHeight;
+}
+
+function syncAiInterviewHiddenAnswers() {
+    const elements = getAiInterviewElements();
+    if (!elements.answers) {
+        return;
+    }
+
+    // Hidden inputs let the regular form submission carry chat answers to Flask
+    elements.answers.innerHTML = aiInterviewState.history.map((turn, index) => `
+        <input type="hidden" name="ai_answer_${index + 1}" value="${escapeHtml(turn.answer)}">
+    `).join("");
+}
+
+function setAiInterviewControls() {
+    const elements = getAiInterviewElements();
+    if (!elements.input || !elements.replyButton || !elements.submitButton) {
+        return;
+    }
+
+    elements.input.disabled = aiInterviewState.isComplete || aiInterviewState.isLoading;
+    elements.replyButton.disabled = aiInterviewState.isComplete || aiInterviewState.isLoading;
+    // Prevent submitting incomplete AI interviews with no useful preference signal
+    elements.submitButton.disabled = !aiInterviewState.isComplete;
+    elements.submitButton.textContent = aiInterviewState.isComplete ? "Launch MusicMe AI" : "Finish Interview First";
+}
+
+function fallbackNextAiQuestion() {
+    // Local fallback keeps the interview usable when Ollama or the route is unavailable
+    const nextIndex = Math.max(aiInterviewState.fallbackIndex, aiInterviewState.history.length);
+    if (nextIndex >= fallbackAiInterviewQuestions.length) {
+        return { is_complete: true, question: "" };
+    }
+
+    const question = fallbackAiInterviewQuestions[nextIndex];
+    aiInterviewState.fallbackIndex = nextIndex + 1;
+    return { is_complete: false, question };
+}
+
+async function requestNextAiQuestion() {
+    // Each turn posts the whole short history; the server decides whether to stop
+    aiInterviewState.isLoading = true;
+    setAiInterviewControls();
+
+    try {
+        const response = await fetch("/interview-next", {
+            method: "POST",
+            headers: {
+                Accept: "application/json",
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ history: aiInterviewState.history }),
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || `Interview request failed with status ${response.status}`);
+        }
+
+        return data;
+    } catch (error) {
+        console.error("MusicMe AI interview turn failed:", error);
+        return fallbackNextAiQuestion();
+    } finally {
+        aiInterviewState.isLoading = false;
+    }
+}
+
+async function advanceAiInterview() {
+    // Move from assistant question to completion state after enough answers are collected
+    const nextTurn = await requestNextAiQuestion();
+
+    if (nextTurn.is_complete) {
+        aiInterviewState.isComplete = true;
+        aiInterviewState.currentQuestion = "";
+        appendAiChatMessage("assistant", "I have enough to build your recommendations.");
+        syncAiInterviewHiddenAnswers();
+        setAiInterviewControls();
+        return;
+    }
+
+    aiInterviewState.currentQuestion = nextTurn.question || fallbackNextAiQuestion().question;
+    appendAiChatMessage("assistant", aiInterviewState.currentQuestion);
+    setAiInterviewControls();
+}
+
+async function submitAiInterviewReply() {
+    // Enter without Shift acts like a chat send; Shift+Enter still creates a newline
+    const elements = getAiInterviewElements();
+    const answer = normalizeToken(elements.input?.value || "");
+
+    if (!answer || !aiInterviewState.currentQuestion) {
+        return;
+    }
+
+    appendAiChatMessage("user", answer);
+    aiInterviewState.history.push({
+        question: aiInterviewState.currentQuestion,
+        answer,
+    });
+    elements.input.value = "";
+    syncAiInterviewHiddenAnswers();
+    await advanceAiInterview();
+}
+
+function initializeAiInterview() {
+    // Initialize only on the homepage AI tab; other pages do not include chat elements
+    if (!aiInterviewContainer) {
+        return;
+    }
+
+    const elements = getAiInterviewElements();
+    if (elements.messages) {
+        elements.messages.innerHTML = "";
+    }
+
+    if (elements.replyButton) {
+        elements.replyButton.addEventListener("click", submitAiInterviewReply);
+    }
+
+    if (elements.input) {
+        elements.input.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                submitAiInterviewReply();
+            }
+        });
+    }
+
+    setAiInterviewControls();
+    advanceAiInterview();
+}
+
 hybridFields.forEach(initHybridField);
+initializeAiInterview();
 bootstrapSpotifyAuth();
 initializeRecommendationsPage();
 
 if (homeTabButtons.length > 0) {
+    // Home tabs are progressive enhancement over server-rendered default panels
     homeTabButtons.forEach((button) => {
         button.addEventListener("click", () => {
             setActiveHomeTab(button.dataset.tabTrigger || "standard");
@@ -493,6 +690,7 @@ if (homeTabButtons.length > 0) {
 }
 
 if (recommendationsContainer) {
+    // Recommendation cards delegate playback clicks from dynamically rendered markup
     recommendationsContainer.addEventListener("click", async (event) => {
         const playButton = event.target.closest(".play-track-button");
         if (!playButton) {
@@ -544,6 +742,7 @@ if (nextTrackButton) {
 const revealElements = document.querySelectorAll(".reveal");
 
 if (revealElements.length > 0) {
+    // About-page reveal animation is opt-in via the reveal class
     const revealObserver = new IntersectionObserver((entries, observer) => {
         entries.forEach((entry) => {
             if (entry.isIntersecting) {

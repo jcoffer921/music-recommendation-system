@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    {# Shared document shell for every MusicMe page #}
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}AI Music Recommendation System{% endblock %}</title>
@@ -8,6 +9,7 @@
     {% block extra_head %}{% endblock %}
 </head>
 <body class="{% block body_class %}{% endblock %}">
+    {# Navigation exposes block hooks so pages can mark their active item #}
     <nav class="navbar">
         <div class="container">
             <div class="navbar-brand">
@@ -20,6 +22,7 @@
         </div>
     </nav>
 
+    {# Page templates provide their primary content through this block #}
     <main class="{% block main_class %}container{% endblock %}">
         {% block content %}{% endblock %}
     </main>
@@ -28,6 +31,7 @@
         <p>&copy; 2026 MusicMe. All rights reserved.</p>
     </footer>
 
+    {# The shared script is defensive and only activates features present on a page #}
     <script src="{{ url_for('static', filename='script.js') }}"></script>
     {% block extra_scripts %}{% endblock %}
 </body>
