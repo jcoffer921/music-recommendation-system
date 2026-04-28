@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+# AI assistance was needed to enforce strict ai intent parsing and prevent non-music queries from biasing results
+
 # Flask entrypoint: owns routing, session state, and the handoff between forms,
-# Ollama intent parsing, Spotify search, and recommendation ranking.
+# Ollama intent parsing, Spotify search, and recommendation ranking
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from flask_cors import CORS
 import requests
@@ -32,12 +34,14 @@ CORS(app)
 
 
 # Terms that should never influence AI search or ranking because the app
-# recommends songs, not stations, podcasts, channels, or broadcast content.
+# recommends songs, not stations, podcasts, channels, or broadcast content
 NON_MUSIC_REQUEST_TERMS = {
     "broadcast",
     "channel",
     "episode",
     "fm",
+    "playlist",
+    "playlists",
     "podcast",
     "radio",
     "show",
@@ -46,15 +50,29 @@ NON_MUSIC_REQUEST_TERMS = {
 }
 
 
+def _preferences_allow_lofi(preferences):
+    """Return True only when user input directly asks for lo-fi."""
+    values = [
+        preferences.get("artist", ""),
+        preferences.get("vibe", ""),
+        preferences.get("natural_language_request", ""),
+        *preferences.get("mood", []),
+        *preferences.get("genre", []),
+        *preferences.get("vibe_terms", []),
+        *preferences.get("intent_terms", []),
+    ]
+    return any(re.search(r"\blo[\s-]?fi\b|\blofi\b", str(value or "").lower()) for value in values)
+
+
 def _get_valid_spotify_session_token():
     """Return a usable Spotify token from the Flask session, refreshing when possible."""
-    # Playback routes call this helper so they do not need to know refresh details.
+    # Playback routes call this helper so they do not need to know refresh details
     token_payload = session.get("spotify_token")
     if not token_payload:
         return None
 
     if token_is_expired(token_payload):
-        # Spotify access tokens expire quickly; refresh tokens keep the login alive.
+        # Spotify access tokens expire quickly; refresh tokens keep the login alive
         refresh_token = token_payload.get("refresh_token")
         if not refresh_token:
             session.pop("spotify_token", None)
@@ -85,6 +103,7 @@ def _build_standard_recommendation_payload(raw_form_data):
         spotify_query,
         limit=40,
         fallback_queries=spotify_queries[1:],
+        allow_lofi=_preferences_allow_lofi(normalized_preferences),
     )
 
     recommendations = rank_tracks(
@@ -113,7 +132,7 @@ def _build_standard_recommendation_payload(raw_form_data):
 def _build_ai_interview_request(raw_form_data):
     answer_parts = []
 
-    # Browser chat turns are posted as ai_answer_1, ai_answer_2, ...
+    # Browser chat turns are posted as ai_answer_1, ai_answer_2, 
     # Sorting keeps the conversation order stable before NLP parsing
     for key, value in sorted((raw_form_data or {}).items()):
         if not key.startswith("ai_answer_"):
@@ -167,6 +186,7 @@ def _build_ai_recommendation_payload(raw_form_data):
         spotify_query,
         limit=40,
         fallback_queries=spotify_queries[1:],
+        allow_lofi=_preferences_allow_lofi(normalized_preferences),
     )
 
     recommendations = rank_tracks(
@@ -267,7 +287,7 @@ def spotify_token():
 @app.route("/auth/logout", methods=["POST"])
 def spotify_logout():
     """Clear the current Spotify login session."""
-    # Logging out only clears this app's session; it does not log out spotify.com
+    # Logging out only clears this app's session; it does not log out spotifycom
     session.pop("spotify_token", None)
     session.pop("spotify_auth_state", None)
     return jsonify({"ok": True}), 200
@@ -449,7 +469,7 @@ def get_recommendations():
 @app.route("/recommend-ai", methods=["POST"])
 def get_ai_recommendations():
     """Get premium MusicMe AI recommendations based on natural-language requests."""
-    # JSON route kept for API-style callers; the web form posts to /musicme-ai/recommendations.
+    # JSON route kept for API-style callers; the web form posts to /musicme-ai/recommendations
     try:
         data = request.get_json() or {}
 
@@ -488,11 +508,12 @@ def get_next_interview_question():
     try:
         data = request.get_json() or {}
         history = data.get("history", [])
+        initial_request = data.get("initial_request", "")
         if not isinstance(history, list):
             return jsonify({"error": "history must be a list"}), 400
 
         interviewer = OllamaInterviewer()
-        return jsonify(interviewer.get_next_question(history)), 200
+        return jsonify(interviewer.get_next_question(history, initial_request=initial_request)), 200
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 

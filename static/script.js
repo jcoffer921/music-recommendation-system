@@ -516,6 +516,7 @@ const aiInterviewState = {
     // History is sent to Flask so Ollama can ask one contextual follow-up at a time
     history: [],
     currentQuestion: "",
+    initialRequest: "",
     fallbackIndex: 0,
     isComplete: false,
     isLoading: false,
@@ -526,6 +527,7 @@ function getAiInterviewElements() {
         messages: document.getElementById("aiInterviewMessages"),
         answers: document.getElementById("aiInterviewAnswers"),
         input: document.getElementById("aiInterviewInput"),
+        initialRequest: document.getElementById("natural_language_request"),
         replyButton: document.getElementById("aiInterviewReplyButton"),
         submitButton: aiInterviewContainer?.closest("form")?.querySelector('button[type="submit"]'),
     };
@@ -551,7 +553,8 @@ function syncAiInterviewHiddenAnswers() {
     }
 
     // Hidden inputs let the regular form submission carry chat answers to Flask
-    elements.answers.innerHTML = aiInterviewState.history.map((turn, index) => `
+    const followUpTurns = aiInterviewState.history.filter((turn) => !turn.isInitialRequest);
+    elements.answers.innerHTML = followUpTurns.map((turn, index) => `
         <input type="hidden" name="ai_answer_${index + 1}" value="${escapeHtml(turn.answer)}">
     `).join("");
 }
@@ -567,11 +570,13 @@ function setAiInterviewControls() {
     // Prevent submitting incomplete AI interviews with no useful preference signal
     elements.submitButton.disabled = !aiInterviewState.isComplete;
     elements.submitButton.textContent = aiInterviewState.isComplete ? "Launch MusicMe AI" : "Finish Interview First";
+    elements.input.placeholder = aiInterviewState.initialRequest ? "Type your answer..." : "Tell MusicMe AI what you want to hear...";
 }
 
 function fallbackNextAiQuestion() {
     // Local fallback keeps the interview usable when Ollama or the route is unavailable
-    const nextIndex = Math.max(aiInterviewState.fallbackIndex, aiInterviewState.history.length);
+    const followUpCount = aiInterviewState.history.filter((turn) => !turn.isInitialRequest).length;
+    const nextIndex = Math.max(aiInterviewState.fallbackIndex, followUpCount);
     if (nextIndex >= fallbackAiInterviewQuestions.length) {
         return { is_complete: true, question: "" };
     }
@@ -585,6 +590,8 @@ async function requestNextAiQuestion() {
     // Each turn posts the whole short history; the server decides whether to stop
     aiInterviewState.isLoading = true;
     setAiInterviewControls();
+    const elements = getAiInterviewElements();
+    const initialRequest = normalizeToken(aiInterviewState.initialRequest || elements.initialRequest?.value || aiInterviewContainer?.dataset.existingRequest || "");
 
     try {
         const response = await fetch("/interview-next", {
@@ -593,7 +600,10 @@ async function requestNextAiQuestion() {
                 Accept: "application/json",
                 "Content-Type": "application/json",
             },
-            body: JSON.stringify({ history: aiInterviewState.history }),
+            body: JSON.stringify({
+                history: aiInterviewState.history,
+                initial_request: initialRequest,
+            }),
         });
         const data = await response.json();
 
@@ -638,6 +648,22 @@ async function submitAiInterviewReply() {
     }
 
     appendAiChatMessage("user", answer);
+    if (!aiInterviewState.initialRequest) {
+        aiInterviewState.initialRequest = answer;
+        if (elements.initialRequest) {
+            elements.initialRequest.value = answer;
+        }
+        aiInterviewState.history.push({
+            question: aiInterviewState.currentQuestion,
+            answer,
+            isInitialRequest: true,
+        });
+        elements.input.value = "";
+        syncAiInterviewHiddenAnswers();
+        await advanceAiInterview();
+        return;
+    }
+
     aiInterviewState.history.push({
         question: aiInterviewState.currentQuestion,
         answer,
@@ -658,6 +684,21 @@ function initializeAiInterview() {
         elements.messages.innerHTML = "";
     }
 
+    const existingRequest = normalizeToken(elements.initialRequest?.value || aiInterviewContainer.dataset.existingRequest || "");
+    if (existingRequest) {
+        aiInterviewState.initialRequest = existingRequest;
+        aiInterviewState.history.push({
+            question: "What do you want to hear right now?",
+            answer: existingRequest,
+            isInitialRequest: true,
+        });
+        appendAiChatMessage("user", existingRequest);
+        advanceAiInterview();
+    } else {
+        aiInterviewState.currentQuestion = "What do you want to hear right now?";
+        appendAiChatMessage("assistant", aiInterviewState.currentQuestion);
+    }
+
     if (elements.replyButton) {
         elements.replyButton.addEventListener("click", submitAiInterviewReply);
     }
@@ -672,7 +713,6 @@ function initializeAiInterview() {
     }
 
     setAiInterviewControls();
-    advanceAiInterview();
 }
 
 hybridFields.forEach(initHybridField);

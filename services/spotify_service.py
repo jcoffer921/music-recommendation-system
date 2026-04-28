@@ -3,6 +3,9 @@
 # Spotify search and audio feature usage follows Spotify Web API documentation
 # Reference: Spotify Developer site Search and Audio Features guides
 
+# Ai was used to help identify and filter out non-song results that can appear in 
+# Spotify search, especially when the user prompt includes radio/podcast-style language
+
 from __future__ import annotations
 
 import re
@@ -18,6 +21,8 @@ NON_MUSIC_SEARCH_TERMS = {
     "dj set",
     "episode",
     "fm",
+    "playlist",
+    "playlists",
     "podcast",
     "radio",
     "show",
@@ -28,11 +33,38 @@ NON_MUSIC_SEARCH_TERMS = {
 NON_SONG_RESULT_PATTERNS = [
     r"\bradio\s+station\b",
     r"\bstation\s+id\b",
+    r"\bplaylist\b",
     r"\bpodcast\b",
     r"\bepisode\b",
     r"\btalk\s+show\b",
     r"\bnews\b",
     r"\binterview\b",
+]
+
+NON_MUSIC_AUDIO_RESULT_PATTERNS = [
+    r"\bambient\s+sounds?\b",
+    r"\bbinaural\s+beats?\b",
+    r"\bbrown\s+noise\b",
+    r"\bcalming\s+sounds?\b",
+    r"\bdeep\s+sleep\s+sounds?\b",
+    r"\bforest\s+sounds?\b",
+    r"\bnature\s+sounds?\b",
+    r"\bocean\s+(sounds?|waves?)\b",
+    r"\brain\s+sounds?\b",
+    r"\brelaxing\s+sounds?\b",
+    r"\briver\s+sounds?\b",
+    r"\bsleep\s+sounds?\b",
+    r"\bsound\s+effects?\b",
+    r"\bthunderstorm\s+sounds?\b",
+    r"\bwater\s+sounds?\b",
+    r"\bwhite\s+noise\b",
+    r"\bwaves?\s+sounds?\b",
+]
+
+LOFI_RESULT_PATTERNS = [
+    r"\blo[\s-]?fi\s+beats?\b",
+    r"\blo[\s-]?fi\s+hip[\s-]?hop\b",
+    r"\bbeats?\s+to\s+(relax|study|sleep|chill)\b",
 ]
 
 
@@ -77,8 +109,24 @@ def _remove_non_music_search_terms(value):
     return " ".join(cleaned.split()).strip()
 
 
+def _explicitly_requests_lofi(*values):
+    """Return True only when the user directly asks for lo-fi."""
+    for value in values:
+        if isinstance(value, list):
+            if _explicitly_requests_lofi(*value):
+                return True
+            continue
+
+        text = " ".join(str(value or "").lower().split())
+        if re.search(r"\blo[\s-]?fi\b|\blofi\b", text):
+            return True
+
+    return False
+
+
 def _extract_searchable_descriptors(*values):
     """Convert free-form vibe phrases into safe Spotify search descriptors."""
+    allow_lofi = _explicitly_requests_lofi(*values)
     # Phrase mappings keep common activities searchable without sending full prose
     phrase_map = {
         "late night": ["late night", "night"],
@@ -90,7 +138,7 @@ def _extract_searchable_descriptors(*values):
         "workout": ["workout", "energetic"],
         "gym": ["workout", "energetic"],
         "study": ["study", "focus"],
-        "focus": ["focus", "instrumental"],
+        "focus": ["focus"],
         "party": ["party", "dance"],
         "chill": ["chill", "calm"],
     }
@@ -125,6 +173,8 @@ def _extract_searchable_descriptors(*values):
 
             for term in mapped_terms:
                 normalized = " ".join(term.split()).strip()
+                if not allow_lofi and re.search(r"\blo[\s-]?fi\b|\blofi\b", normalized):
+                    continue
                 if not normalized or normalized in seen:
                     continue
                 descriptors.append(normalized)
@@ -133,7 +183,7 @@ def _extract_searchable_descriptors(*values):
     return descriptors
 
 
-def _looks_like_non_song_result(track):
+def _looks_like_non_song_result(track, allow_lofi=False):
     """Reject obvious station/show/podcast tracks while preserving normal songs."""
     name = str(track.get("name", "") or "").lower()
     album_name = str((track.get("album") or {}).get("name", "") or "").lower()
@@ -144,11 +194,23 @@ def _looks_like_non_song_result(track):
     )
     haystack = " ".join([name, album_name, artist_names])
 
+    if not artist_names.strip():
+        return True
+
     # Avoid filtering the band Radiohead just because their name contains "radio"
     if "radiohead" in haystack:
         return False
 
-    return any(re.search(pattern, haystack) for pattern in NON_SONG_RESULT_PATTERNS)
+    if any(re.search(pattern, haystack) for pattern in NON_SONG_RESULT_PATTERNS):
+        return True
+
+    if any(re.search(pattern, haystack) for pattern in NON_MUSIC_AUDIO_RESULT_PATTERNS):
+        return True
+
+    if not allow_lofi and any(re.search(pattern, haystack) for pattern in LOFI_RESULT_PATTERNS):
+        return True
+
+    return False
 
 
 def build_spotify_queries(normalized_data):
@@ -262,7 +324,14 @@ class SpotifyService:
         """Fetch Spotify audio features when available, otherwise return blanks."""
         return self.client.get_audio_features(track_ids)
 
-    def search_tracks_with_features(self, query, limit=20, fallback_queries=None, max_tracks_per_artist=2):
+    def search_tracks_with_features(
+        self,
+        query,
+        limit=20,
+        fallback_queries=None,
+        max_tracks_per_artist=2,
+        allow_lofi=False,
+    ):
         """Search tracks and return aligned audio features for ranking."""
         # Fallback queries let the app recover when a precise search has sparse results
         search_queries = [query]
@@ -283,7 +352,10 @@ class SpotifyService:
 
             for track in search_results:
                 # Spotify search type=track can still surface station-like audio assets
-                if _looks_like_non_song_result(track):
+                if _looks_like_non_song_result(
+                    track,
+                    allow_lofi=allow_lofi,
+                ):
                     continue
 
                 track_id = track.get("id")

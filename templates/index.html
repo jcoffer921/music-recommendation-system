@@ -127,6 +127,8 @@
             <fieldset>
                 <legend>MusicMe AI Request</legend>
 
+                <input type="hidden" id="natural_language_request" name="natural_language_request" value="{{ values.get('natural_language_request', '') }}">
+
                 {# JavaScript turns this container into a conversational Ollama interview #}
                 <div class="form-group ai-interview-group">
                     <div
@@ -150,17 +152,6 @@
                             <button id="aiInterviewReplyButton" type="button" class="btn-secondary btn-inline">Reply</button>
                         </div>
                     </div>
-                    {# No-JS fallback still gives the AI route a text signal to parse #}
-                    <noscript>
-                        <label for="natural_language_request">MusicMe AI question</label>
-                        <textarea
-                            id="natural_language_request"
-                            name="natural_language_request"
-                            class="prompt-textarea"
-                            rows="5"
-                            placeholder="Tell MusicMe AI what you want to hear."
-                        >{{ values.get('natural_language_request', '') }}</textarea>
-                    </noscript>
                 </div>
 
                 {# Optional anchors let users steer results after the interview #}

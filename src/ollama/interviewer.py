@@ -14,6 +14,8 @@ class OllamaInterviewer:
         "channel",
         "episode",
         "fm",
+        "playlist",
+        "playlists",
         "podcast",
         "radio",
         "show",
@@ -21,21 +23,30 @@ class OllamaInterviewer:
         "stations",
     }
 
+    LOFI_INTENT_TERMS = {
+        "lo-fi",
+        "lofi",
+        "lo-fi beats",
+        "lofi beats",
+        "lo-fi hip-hop",
+        "lofi hip hop",
+    }
+
     # Deterministic fallbacks keep the chat usable when Ollama is not running
     FALLBACK_QUESTIONS = [
         {
             "id": "moment",
-            "question": "What are you doing or getting ready for while listening?",
+            "question": "What kind of mood should this have?",
             "placeholder": "e.g., working late, driving, getting ready to go out",
         },
         {
             "id": "feeling",
-            "question": "How should the music make you feel?",
+            "question": "Should it stay close to that sound or branch into similar artists?",
             "placeholder": "e.g., focused, confident, calm, nostalgic, energized",
         },
         {
             "id": "sound",
-            "question": "What sounds, genres, or artists should guide the recommendations?",
+            "question": "Any sounds or genres you want included or avoided?",
             "placeholder": "e.g., glossy synth pop, SZA, mellow R&B, 90s rock",
         },
     ]
@@ -135,8 +146,9 @@ class OllamaInterviewer:
         except requests.RequestException:
             return self.FALLBACK_QUESTIONS
 
-    def get_next_question(self, history):
+    def get_next_question(self, history, initial_request=""):
         """Ask Ollama for the next conversational interview question."""
+        initial_request = " ".join(str(initial_request or "").split())
         # Only complete question/answer turns are included in the model context
         cleaned_history = []
         for item in history or []:
@@ -149,9 +161,12 @@ class OllamaInterviewer:
             return {"is_complete": True, "question": ""}
 
         # The fallback question matches the current turn index for predictable recovery
-        fallback_question = self.FALLBACK_QUESTIONS[len(cleaned_history)]["question"]
+        fallback_question = self._fallback_followup_question(cleaned_history, initial_request)
         prompt = f"""
         You are MusicMe AI interviewing a user before recommending songs.
+
+        User's first request:
+        {initial_request or "No first request provided"}
 
         Conversation so far:
         {json.dumps(cleaned_history, ensure_ascii=True)}
@@ -165,10 +180,30 @@ class OllamaInterviewer:
         Rules:
         - Ask exactly one question
         - Sound conversational, not like a form
-        - Use the user's previous answers to choose the next question
-        - Stop after 3 answered questions by returning {{"is_complete": true, "question": ""}}
-        - Do not ask for private personal data
-        - Do not include markdown or explanation
+        - If the user provided a first request, reference it naturally
+        - Use previous answers to guide the next question
+        - Do not ask for an artist, genre, or sound if already provided
+        - Do not repeat or reword previously answered questions
+        - Ask about missing details (mood, energy, tempo, era, artist similarity, or what to avoid)
+        - Prefer short, clear questions (under 15 words)
+        - Avoid vague or generic questions
+        - Keep questions specific to improving recommendations
+        - Adapt tone to match the user's style (casual vs descriptive)
+        - Steer the user toward vocal songs with clear lyrics unless they ask otherwise
+        - Avoid instrumental, lo-fi, beats, ambient, background, soundtrack, or score wording unless explicitly requested
+        - Only recommend specific artists and songs, not playlists or radio stations
+        - Avoid generating “station,” “radio,” or playlist-style results
+        - Do not recommend lo-fi beats or generic background/instrumental tracks unless explicitly requested
+        - If enough information is gathered early, you may stop before 3 questions
+        - Avoid songs without vocals/lyrics unless explicitly requested
+        - Stop after 3 answered questions by returning {"is_complete": true, "question": ""}
+        - Only recommend individual songs by specific artists
+        - Only recommend songs with clear vocals and lyrics
+        - Reject track if speechiness ≤ 0.03 unless the user explicitly asks for non-vocal music
+        - Do not recommend soundtracks, scores, or cinematic audio without vocals
+        - Do not recommend playlist-style, radio, or station results
+        - Do not ask for private or sensitive personal data
+        - Do not include markdown or explanations
         """
 
         try:
@@ -186,6 +221,20 @@ class OllamaInterviewer:
             return {"is_complete": False, "question": question or fallback_question}
         except requests.RequestException:
             return {"is_complete": False, "question": fallback_question}
+
+    def _fallback_followup_question(self, cleaned_history, initial_request):
+        """Build a contextual fallback question when Ollama is unavailable."""
+        turn_index = len(cleaned_history)
+        request_text = initial_request or "that request"
+
+        if turn_index == 0:
+            return f"What kind of mood should {request_text} have?"
+        if turn_index == 1:
+            return "Should the recommendations stay close to that sound or branch into similar artists?"
+        if turn_index == 2:
+            return "Any sounds, genres, or styles you want included or avoided?"
+
+        return ""
 
     def _fallback_summary(self, responses):
         """Build a readable summary when the model is unavailable or off-format."""
@@ -224,6 +273,7 @@ class OllamaInterviewer:
     def _fallback_intent(self, free_text):
         """Keyword-based intent extraction when Ollama is unavailable or off-format."""
         text = " ".join(str(free_text or "").lower().split())
+        allow_lofi = self._explicitly_requests_lofi(text)
 
         # These mappings intentionally stay conservative to avoid hallucinated genres
         keyword_map = {
@@ -262,6 +312,8 @@ class OllamaInterviewer:
         for bucket, mapping in keyword_map.items():
             for label, phrases in mapping.items():
                 if any(phrase in text for phrase in phrases):
+                    if label == "lo-fi" and not allow_lofi:
+                        continue
                     extracted[bucket].append(label)
 
         # Audio targets give the ranker useful numeric hints even with sparse tags
@@ -293,7 +345,12 @@ class OllamaInterviewer:
             "intent_terms": terms,
         }
 
-    def _clean_intent_terms(self, values):
+    def _explicitly_requests_lofi(self, value):
+        """Return True when the user directly asks for lo-fi."""
+        text = " ".join(str(value or "").lower().split())
+        return bool(re.search(r"\blo[\s-]?fi\b|\blofi\b", text))
+
+    def _clean_intent_terms(self, values, allow_lofi=False):
         """Deduplicate model tags and strip terms that are not song descriptors."""
         cleaned_terms = []
         seen_terms = set()
@@ -301,6 +358,8 @@ class OllamaInterviewer:
         for value in values or []:
             cleaned = " ".join(str(value).strip().lower().split())
             if not cleaned or cleaned in self.NON_MUSIC_INTENT_TERMS or cleaned in seen_terms:
+                continue
+            if not allow_lofi and cleaned in self.LOFI_INTENT_TERMS:
                 continue
 
             cleaned_terms.append(cleaned)
@@ -325,6 +384,7 @@ class OllamaInterviewer:
                 "intent_terms": [],
             }
 
+        allow_lofi = self._explicitly_requests_lofi(free_text)
         prompt = f"""
         Convert the user's music request into JSON for a recommendation system.
 
@@ -348,8 +408,10 @@ class OllamaInterviewer:
         Rules:
         - Infer listening intent from the language
         - Recommend songs or tracks only
-        - Ignore requests for radio stations, broadcasts, podcasts, shows, episodes, or channels
-        - Do not include "radio", "station", "podcast", "show", "episode", "broadcast", "channel", or "fm" in any output field
+        - Ignore requests for radio stations, broadcasts, podcasts, shows, episodes, channels, or playlists
+        - Do not include "radio", "station", "podcast", "show", "episode", "broadcast", "channel", "playlist", "playlists", or "fm" in any output field
+        - Do not include lo-fi, lofi, beats, instrumental, ambient, background, soundtrack, or score unless the user explicitly asks for that content
+        - Prefer vocal songs with clear lyrics
         - Use concise tags
         - Do not add explanation
         - Prefer null over guessing when the request is ambiguous
@@ -366,18 +428,20 @@ class OllamaInterviewer:
             artist = " ".join(str(parsed.get("artist", "")).split())
             if artist.lower() in self.NON_MUSIC_INTENT_TERMS:
                 artist = ""
+            if not allow_lofi and artist.lower() in self.LOFI_INTENT_TERMS:
+                artist = ""
 
             return {
-                "mood": self._clean_intent_terms(parsed.get("mood", [])),
-                "genre": self._clean_intent_terms(parsed.get("genre", [])),
-                "vibe": self._clean_intent_terms(parsed.get("vibe", [])),
+                "mood": self._clean_intent_terms(parsed.get("mood", []), allow_lofi=allow_lofi),
+                "genre": self._clean_intent_terms(parsed.get("genre", []), allow_lofi=allow_lofi),
+                "vibe": self._clean_intent_terms(parsed.get("vibe", []), allow_lofi=allow_lofi),
                 "artist": artist,
                 "energy": parsed.get("energy") if isinstance(parsed.get("energy"), (int, float)) else fallback.get("energy"),
                 "valence": parsed.get("valence") if isinstance(parsed.get("valence"), (int, float)) else fallback.get("valence"),
                 "danceability": parsed.get("danceability") if isinstance(parsed.get("danceability"), (int, float)) else fallback.get("danceability"),
                 "acousticness": parsed.get("acousticness") if isinstance(parsed.get("acousticness"), (int, float)) else fallback.get("acousticness"),
                 "tempo": int(parsed.get("tempo")) if isinstance(parsed.get("tempo"), (int, float)) else fallback.get("tempo"),
-                "intent_terms": self._clean_intent_terms(parsed.get("intent_terms", []))
+                "intent_terms": self._clean_intent_terms(parsed.get("intent_terms", []), allow_lofi=allow_lofi)
                 or fallback.get("intent_terms", []),
             }
         except requests.RequestException:
